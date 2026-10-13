@@ -9,6 +9,12 @@
 - 用户已要求开始开发，并指定GitHub仓库 https://github.com/yanzengyun/pi-agent-multi-tenant.git 上传代码。
 - 当前个人助手必须保持可用。没有授权把真实用户状态迁入开发环境；测试仅用虚构用户。
 
+## 微信处理提示（2026-10-14）
+
+- 用户要求与主用户一致，每次处理前发送“✅ 已收到，pi 处理中...”。RunQueue新增await beforeRun，WechatManager按run所属用户与原inbox发送，稳定client_id带processing后缀；普通重放不重跑也不重复提示。
+- 提示失败或5秒超时不阻塞任务，不进入最终回复重试队列，避免结果后又补发处理提示。网页任务、人物设定草稿及定时提醒没有该提示。无需数据库迁移。
+- 已上线，45项Node测试通过，新增执行前顺序/重放去重/用户上下文/失败继续测试；生产健康检查通过，用户/绑定保持不变，原个人Pi进程未重启。备份：/home/admin/.local/share/pi-agent-multi-tenant/backups/20261014-005210。
+
 ## 最新上线：轻量命令沙箱与复用池（2026-10-13）
 
 - 用户授权按推荐方案开发，允许合适的池复用。已上线Bubblewrap独立runner及cmd；c0051ca时间/persona修复同时已部署。真实模型和普通合成用户均调用time_now、persona_read/write、cmd成功；未发真实微信消息、未改Lucy的设定/密码。原个人Pi PID2985保持不变。

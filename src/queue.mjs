@@ -2,10 +2,10 @@ import { systemPrompt } from './engine.mjs';
 import { EventEmitter } from 'node:events';
 
 export class RunQueue extends EventEmitter {
-  constructor(store, engine, { timeoutMs = 120000, contextFactory = () => ({}) } = {}) {
+  constructor(store, engine, { timeoutMs = 120000, contextFactory = () => ({}), beforeRun = async () => {} } = {}) {
     super();
     this.store = store; this.engine = engine; this.timeoutMs = timeoutMs;
-    this.contextFactory = contextFactory;
+    this.contextFactory = contextFactory; this.beforeRun = beforeRun;
     this.closed = false; this.active = null; this.work = null;
     store.recover();
     this.kick();
@@ -50,6 +50,8 @@ export class RunQueue extends EventEmitter {
         setSdkFile: file => this.store.setSdkFile(run.user_id, run.conversation_id, file),
       };
       try {
+        await this.beforeRun(run, controller.signal);
+        if (controller.signal.aborted) throw new Error('Run aborted');
         emit('prompt', { mode: this.engine.mode || 'mock',
           system: systemPrompt(context.memory(), context.agentProfile()), input: run.prompt });
         this.store.message(run.user_id, run.conversation_id, 'user', run.prompt);

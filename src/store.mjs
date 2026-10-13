@@ -231,6 +231,9 @@ export class Store {
       this.db.exec('COMMIT'); return true;
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
+  wechatInbox(userId, runId) {
+    return this.db.prepare("SELECT * FROM wechat_inbox WHERE user_id=? AND run_id=? AND delivery='pending'").get(userId, runId);
+  }
   deliveries() {
     return this.db.prepare(`SELECT i.*,r.status,r.response,r.error FROM wechat_inbox i JOIN runs r ON r.id=i.run_id
       WHERE i.delivery='pending' AND r.status IN ('completed','failed','interrupted') ORDER BY r.created_at,i.rowid`).all();

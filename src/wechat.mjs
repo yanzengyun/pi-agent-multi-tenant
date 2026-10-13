@@ -153,6 +153,22 @@ export class WechatManager {
       try { await delay(this.pollDelayMs, undefined, { signal }); } catch { return; }
     }
   }
+  async processing(run, runSignal) {
+    if (this.closed) return;
+    const inbox = this.store.wechatInbox(run.user_id, run.id);
+    if (!inbox || inbox.message_id.startsWith('reminder:')) return;
+    const binding = this.store.wechatBinding(run.user_id);
+    if (!binding || binding.id !== inbox.binding_id || binding.status !== 'connected') return;
+    const connectionSignal = this.controllers.get(binding.id)?.signal;
+    const signal = AbortSignal.any([this.abort.signal, ...(runSignal ? [runSignal] : []),
+      ...(connectionSignal ? [connectionSignal] : []), AbortSignal.timeout(5000)]);
+    try {
+      await this.client.send(binding, inbox, '✅ 已收到，pi 处理中...', `pi-${inbox.id}-processing`, signal);
+    } catch (error) {
+      if (error.message === 'wechat_session_expired') this.store.bindingStatus(binding.id, 'expired');
+      // A failed notice must not block the task or arrive after its final reply.
+    }
+  }
   async flush() {
     if (this.closed) return;
     if (this.flushWork) return this.flushWork;

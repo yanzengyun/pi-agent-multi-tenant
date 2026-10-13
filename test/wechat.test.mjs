@@ -159,3 +159,38 @@ test('bindings, cursor and inbox survive restart without re-running a replayed m
   assert.equal(store.pending().length, 0); assert.equal(client.sent.length, 1);
   assert.equal(store.memory(user.id), 'RESTART_OWN_MEMORY'); await queue.close();
 });
+
+test('processing notice precedes execution and reply; replay does not resend it', async t => {
+  const { store, alice, manager, client } = fixture(t);
+  const binding = store.bindWechat(alice.id, { token: 'fake-token', botId: 'notice-bot', remoteUser: 'notice-peer', baseUrl: 'https://ilinkai.weixin.qq.com' });
+  const raw = { message_type: 1, message_id: 'notice-message', from_user_id: binding.remote_user,
+    context_token: 'notice-context', item_list: [{ type: 1, text_item: { text: 'hello' } }] };
+  manager.ingest(binding, raw);
+  let modelCalls = 0;
+  const queue = new RunQueue(store, { async run() {
+    modelCalls++;
+    assert.equal(client.sent.length, 1);
+    assert.equal(client.sent[0].text, '✅ 已收到，pi 处理中...');
+    return 'done';
+  } }, { beforeRun: run => manager.processing(run) });
+  await queue.work; await manager.flush();
+  manager.ingest(binding, raw); queue.kick(); await queue.work; await manager.flush();
+  assert.equal(modelCalls, 1);
+  assert.deepEqual(client.sent.map(message => message.text), ['✅ 已收到，pi 处理中...', 'done']);
+  assert.ok(client.sent.every(message => message.localUser === alice.id && message.receiver === binding.remote_user && message.context === 'notice-context'));
+  assert.notEqual(client.sent[0].clientId, client.sent[1].clientId);
+  await queue.close();
+});
+
+test('failed processing notice does not block execution or final delivery', async t => {
+  const { store, alice, manager, client } = fixture(t);
+  const binding = store.bindWechat(alice.id, { token: 'fake-token', botId: 'failure-bot', remoteUser: 'failure-peer', baseUrl: 'https://ilinkai.weixin.qq.com' });
+  manager.ingest(binding, { message_type: 1, message_id: 'notice-failure', from_user_id: binding.remote_user,
+    context_token: 'failure-context', item_list: [{ type: 1, text_item: { text: 'hello' } }] });
+  client.failSend = true;
+  const queue = new RunQueue(store, { async run() { client.failSend = false; return 'done'; } }, { beforeRun: run => manager.processing(run) });
+  await queue.work; await manager.flush();
+  assert.deepEqual(client.sent.map(message => message.text), ['✅ 已收到，pi 处理中...', 'done']);
+  assert.equal(store.deliveries().length, 0);
+  await queue.close();
+});

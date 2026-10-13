@@ -39,8 +39,9 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
   }
   const dummyPassword = await hashPassword(randomBytes(32).toString('hex'));
   const reminders = new Reminders(store, () => { void wechat?.flush(); });
-  const queue = new RunQueue(store, engine, { timeoutMs, contextFactory: userId => ({ notes: silverbullet?.tools(userId), reminders: reminders.tools(userId), sandbox: sandbox?.tools(userId) }) });
   const wechat = wechatClient && new WechatManager(store, wechatClient, { ...wechatOptions, onMessage: () => queue.kick() });
+  const queue = new RunQueue(store, engine, { timeoutMs, beforeRun: (run, signal) => wechat?.processing(run, signal),
+    contextFactory: userId => ({ notes: silverbullet?.tools(userId), reminders: reminders.tools(userId), sandbox: sandbox?.tools(userId) }) });
   if (wechat) { queue.on('settled', () => { void wechat.flush(); }); wechat.start(); }
   reminders.start();
   if (silverbullet && wechat) {
