@@ -61,7 +61,7 @@ export class PiEngine {
     );
     if (ctx.speech) customTools.push({
       name: 'voice_reply', label: 'Prepare Voice Reply',
-      description: '用户明确要求语音回复或自己的人物设定要求时，准备一段微信原生语音。每轮最多一次，中文口语内容最多200字符、60秒；长回答只读摘要。完成后系统会发送文字和语音，工具成功仅表示准备好，不代表已送达。失败时正常文字回复，不能声称已发语音。',
+      description: '用户明确要求语音回复或自己的人物设定要求时，准备一个MP3音频附件（原生语音气泡暂不可用）。每轮最多一次，中文口语内容最多200字符、60秒；长回答只读摘要。完成后系统会发送文字和MP3音频文件，工具成功仅表示准备好，不代表已送达。失败时正常文字回复，不能声称已发语音气泡或已送达。',
       parameters: Type.Object({ text: Type.String({ maxLength: 200 }) }),
       async execute(_id, { text }) { return result(JSON.stringify(await ctx.speech.prepare(text, ctx.signal))); },
     });

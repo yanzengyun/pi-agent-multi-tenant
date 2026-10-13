@@ -221,6 +221,9 @@ test('voice outbox isolates users and retries audio without repeating delivered 
   await manager.flush();
   assert.equal(uploads, 1); assert.equal(voices[0], voices[1]); assert.equal(client.sent.length, 1);
   assert.equal(store.deliveries().length, 0); assert.equal(store.voice(alice.id, run.id), undefined);
+  const accepted = store.traces(alice.id, run.id).find(event => event.kind === 'audio_api_accepted');
+  assert.equal(accepted.payload.format, 'mp3_file');
+  assert.equal(accepted.payload.clientPlaybackConfirmed, false);
 });
 
 test('unbinding clears prepared audio and prevents its delivery', async t => {

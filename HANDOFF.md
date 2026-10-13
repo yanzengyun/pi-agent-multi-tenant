@@ -9,7 +9,14 @@
 - 用户已要求开始开发，并指定GitHub仓库 https://github.com/yanzengyun/pi-agent-multi-tenant.git 上传代码。
 - 当前个人助手必须保持可用。没有授权把真实用户状态迁入开发环境；测试仅用虚构用户。
 
-## MiniMax微信语音回复（2026-10-14）
+## 语音气泡不可见修复（2026-10-14）
+
+- 用户确认Lucy收不到。Lucy在北京时间01:21的真实运行voice_reply成功，14.26秒，出站队列记录接口接受，但客户端不可见。不能把sent/API成功当成端侧收到了。腾讯仓库issue215同样实测VOICE上传+VOICE消息无显示，包括silk-wasm/24kHz；没有官方权限或字段根因结论。https://github.com/Tencent/openclaw-weixin/issues/215 。
+- 改用官方插件的音频FILE路径：MiniMax直接生成MP3，media_type3上传/type4文件消息，voice-reply.mp3；保留voice_reply工具名、每轮200字/60秒、隔离outbox与重试。移除silk-wasm依赖，不再提供原生气泡。工具提示与system说明MP3附件；准备不等于送达。
+- 已部署，服务健康检查与用户/绑定保持检查通过，原个人PID未变；备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261014-013006。本地54项Node测试通过，独立临时库真实模型调用voice_reply、现有key合成MP3（3432ms/28788字节）及微信FILE上传通过。未向真实聊天额外发送测试消息，客户端收到与播放待用户确认。
+- 新增非零业务errcode失败校验（HTTP200/ret0也不能忽略errcode），trace新增audio_api_accepted，clientPlaybackConfirmed固定false。模型/合成/上传成功不代表客户端已经验证。
+
+## 历史：MiniMax微信语音回复（2026-10-14）
 
 - 用户指定官方API文档并授权复用当前key。现有MINIMAX_CN_API_KEY真实调用t2a_v2成功；没有读取/输出密钥。MiniMax speech-2.8-turbo、male-qn-qingse、PCM16/24kHz转SILK，新增voice_reply工具，默认文字，明确要求“用语音回复”时准备每轮最多一段200字/60秒。
 - 仅当前运行的微信inbox提供工具，用户与run固定在后端闭包中；网页与人物设定草稿不可用。准备完成后文字与语音通过原微信队列投递，微信语音消息type3/encode_type6，上传media_type4；新增私有wechat_voice表保留音频和CDN引用至发送完成，重试不再次合成、不重复已成功发送的文字，解绑清理。CDN只允许微信HTTPS域名，不携带模型或bot凭据。

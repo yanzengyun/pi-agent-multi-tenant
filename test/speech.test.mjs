@@ -2,16 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Speech } from '../src/speech.mjs';
 
-test('TTS uses the existing key, limits text, returns SILK and exposes no credentials', async () => {
+test('TTS uses the existing key, limits text, returns MP3 and exposes no credentials', async () => {
   let calls = 0;
   const speech = new Speech('fake-secret', { fetcher: async (url, options) => {
     calls++;
     assert.equal(url, 'https://api.minimax.cn/v1/t2a_v2');
     assert.equal(options.headers.Authorization, 'Bearer fake-secret');
     const request = JSON.parse(options.body);
-    assert.equal(request.audio_setting.format, 'pcm');
+    assert.equal(request.audio_setting.format, 'mp3');
     assert.equal(request.text, '你好');
-    return new Response(JSON.stringify({ base_resp: { status_code: 0 }, data: { audio: Buffer.alloc(24000).toString('hex') } }));
+    return new Response(JSON.stringify({ base_resp: { status_code: 0 }, data: { audio: Buffer.from('ID3fake-mp3').toString('hex') }, extra_info: { audio_length: 1000 } }));
   } });
   const voice = await speech.synthesize('你好');
   assert.ok(voice.audio.length > 0);
@@ -26,22 +26,22 @@ test('TTS rejects provider failures and malformed or overlong audio with safe er
   for (const data of [
     { base_resp: { status_code: 1004, status_msg: 'fake-secret' } },
     { base_resp: { status_code: 0 }, data: { audio: 'not-hex' } },
-    { base_resp: { status_code: 0 }, data: { audio: Buffer.alloc(24000 * 2 * 61).toString('hex') } },
+    { base_resp: { status_code: 0 }, data: { audio: Buffer.from('ID3fake-mp3').toString('hex') }, extra_info: { audio_length: 61000 } },
   ]) {
     const speech = new Speech('fake-secret', { fetcher: async () => new Response(JSON.stringify(data)) });
     await assert.rejects(speech.synthesize('你好'), error => /speech_/.test(error.message) && !error.message.includes('fake-secret'));
   }
 });
 
-test('WeChat voice transport encrypts the SILK and emits a native voice payload', async () => {
+test('WeChat voice transport encrypts MP3 and emits an audio file payload', async () => {
   const { ILinkClient } = await import('../src/wechat.mjs');
   const { createDecipheriv } = await import('node:crypto');
-  const audio = Buffer.from('fake-silk'), binding = { base_url: 'https://ilinkai.weixin.qq.com', token: 'fake-bot-token', remote_user: 'own-peer' };
+  const audio = Buffer.from('ID3fake-mp3'), binding = { base_url: 'https://ilinkai.weixin.qq.com', token: 'fake-bot-token', remote_user: 'own-peer' };
   let uploadRequest, outgoing, ciphertext;
   const client = new ILinkClient({ fetcher: async (url, options) => {
     if (String(url).includes('getuploadurl')) {
       uploadRequest = JSON.parse(options.body);
-      assert.equal(uploadRequest.media_type, 4); assert.equal(uploadRequest.to_user_id, 'own-peer');
+      assert.equal(uploadRequest.media_type, 3); assert.equal(uploadRequest.to_user_id, 'own-peer');
       return Response.json({ ret: 0, upload_param: 'fake-upload' });
     }
     if (String(url).includes('/c2c/upload')) {
@@ -54,12 +54,13 @@ test('WeChat voice transport encrypts the SILK and emits a native voice payload'
   const media = await client.uploadVoice(binding, { audio }, undefined);
   const decipher = createDecipheriv('aes-128-ecb', Buffer.from(uploadRequest.aeskey, 'hex'), null);
   assert.deepEqual(Buffer.concat([decipher.update(ciphertext), decipher.final()]), audio);
-  await client.sendVoice(binding, { context_token: 'own-context' }, { sample_rate: 24000, duration: 1000 }, media, 'stable-voice-id');
+  await client.sendVoice(binding, { context_token: 'own-context' }, { audio, sample_rate: 24000, duration: 1000 }, media, 'stable-voice-id');
   assert.equal(outgoing.msg.context_token, 'own-context');
   assert.equal(outgoing.msg.to_user_id, 'own-peer');
-  assert.equal(outgoing.msg.item_list[0].type, 3);
-  assert.equal(outgoing.msg.item_list[0].voice_item.encode_type, 6);
-  assert.equal(outgoing.msg.item_list[0].voice_item.playtime, 1000);
+  assert.equal(outgoing.msg.item_list[0].type, 4);
+  assert.equal(outgoing.msg.item_list[0].file_item.file_name, 'voice-reply.mp3');
+  assert.equal(outgoing.msg.item_list[0].file_item.len, String(audio.length));
+  assert.equal(outgoing.msg.item_list[0].voice_item, undefined);
 });
 
 test('media upload rejects untrusted CDN URLs before sending audio or credentials', async () => {
@@ -90,4 +91,11 @@ test('speech tools require an own WeChat inbox and synthesize once per run', asy
     await Promise.all([tools.prepare('你好'), tools.prepare('你好')]);
     assert.equal(calls, 1); assert.equal(store.voice(alice.id, run.id).duration, 1000);
   } finally { store.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+
+test('WeChat reports nonzero business errcode as failure even with HTTP 200', async () => {
+  const { ILinkClient } = await import('../src/wechat.mjs');
+  const client = new ILinkClient({ fetcher: async () => Response.json({ ret: 0, errcode: 12345 }) });
+  await assert.rejects(client.send({ base_url: 'https://ilinkai.weixin.qq.com', token: 'fake-token', remote_user: 'own-peer' }, { context_token: 'own-context' }, 'test', 'fake-id'), /wechat_request_failed/);
 });

@@ -19,7 +19,7 @@
 - 管理员可按用户查看最近50次运行，展开提示词、注入记忆、SDK与工具事件、结果和错误；普通用户不能访问管理员接口，错配用户与run ID返回404。
 - 密码 scrypt、会话 token 只存摘要、过期和退出撤销、HttpOnly/SameSite Cookie、请求体与登录并发限制。
 - 管理员按用户生成微信二维码、查看扫码状态、取消和解绑；连接按用户独立长轮询，支持文本和语音转写文本。
-- 可选MiniMax语音回复（`ASSISTANT_TTS=on`），复用现有`MINIMAX_CN_API_KEY`，默认文字；用户说“用语音回复”时，模型调用`voice_reply`。每轮最多一段、200字符、60秒，长回答读摘要。只给当前微信消息发送，网页/人物设定草稿不提供语音工具。
+- 可选MiniMax音频回复，以MP3附件发送（`ASSISTANT_TTS=on`），复用现有`MINIMAX_CN_API_KEY`，默认文字；用户说“用语音回复”时，模型调用`voice_reply`。每轮最多一段、200字符、60秒，长回答读摘要。只给当前微信消息发送，网页/人物设定草稿不提供语音工具。
 - 每条微信聊天消息开始执行前，先发送“✅ 已收到，pi 处理中...”，完成后再发送结果；提示最多等待5秒，失败不阻塞任务，不补发迟到提示。网页任务和定时提醒不发送该提示。
 - 微信发送者先校验再写入队列，持久化游标与消息去重；回复失败留在数据库重试。稳定发送ID不代表微信接口提供严格的恰好一次投递，网络故障时仍可能重复回复。
 - 解绑保留微信身份归属，重新绑定必须是原微信用户，不能换人继承记忆。原个人助手身份可加入保护名单，不导入其微信token或聊天。
@@ -244,8 +244,11 @@ sudo curl --unix-socket /run/pi-sandbox/runner.sock -H 'Content-Type: applicatio
 
 ## 微信语音回复部署与验证
 
-- 接口：MiniMax `https://api.minimax.cn/v1/t2a_v2`，`speech-2.8-turbo`，默认音色`male-qn-qingse`；PCM16单声道24kHz转为SILK（锁定依赖`silk-wasm@3.7.1`），微信上传类型4、消息类型3/编码6。接口文档：https://platform.minimax.cn/docs/api-reference/speech-t2a-http 。
+- 接口：MiniMax `https://api.minimax.cn/v1/t2a_v2`，`speech-2.8-turbo`，默认音色`male-qn-qingse`；直接生成MP3、24kHz/64kbps，微信上传类型3（FILE）、消息类型4（FILE）；附件名voice-reply.mp3。原生VOICE气泡路径已停用，因为API成功但实际客户端未显示。接口文档：https://platform.minimax.cn/docs/api-reference/speech-t2a-http 。
 - `/home/admin/.config/pi-agent-multi-tenant/env`增加`ASSISTANT_TTS=on`后重启多用户服务。密钥继续由原启动器从`/home/admin/.config/pi-agent/env`加载，不新建或复制密钥，不修改个人Pi进程。
 - 更新代码用`python3 scripts/update-live.py`，锁文件变化时安装独立后端依赖，SDK运行目录保持独立。新增SQLite表`wechat_voice`自动创建，无需手工迁移。待发送音频及CDN引用存于私有库，投递完成/取消后删除；需随数据库备份。音频失败可重试；文字成功后不因语音重试而重复发送，已上传的音频不会重复合成。网络响应丢失仍可能重复语音，稳定client_id不构成严格恰好一次保证。
-- `scripts/verify-speech-live.mjs`仅用独立临时库与虚构微信用户，调用真实模型/TTS并检查SILK编码、解码、工具trace与文字+语音outbox；加`--verify-upload`用现有连接进行一次真实CDN上传，不发送真实微信聊天消息。启动前由admin加载原私有模型env。
-- 真实模型、现有key合成、SILK往返及微信语音CDN上传均已通过；原生语音sendmessage载荷有模拟测试，微信客户端实际播放尚需发送“请用语音回复一句你好”验收。原个人Pi插件仍维持原功能，本次只启用多用户助手的TTS。
+- `scripts/verify-speech-live.mjs`仅用独立临时库与虚构微信用户，调用真实模型/TTS并检查MP3格式、工具trace与文字+音频outbox；加`--verify-upload`用现有连接进行一次真实CDN上传，不发送真实微信聊天消息。启动前由admin加载原私有模型env。
+- 原VOICE路径真实合成/上传/API接受均成功，但Lucy实际收不到语音；已改为腾讯官方插件使用的FILE音频附件路径，不能再将协议里的VOICE类型当成可靠的气泡功能。微信客户端实际收到和播放MP3附件仍需发送“请用语音回复一句你好”验收。原个人Pi插件仍维持原功能，本次只启用多用户助手的TTS。
+
+
+原生语音气泡限制：Lucy在2026-10-14的实测中voice_reply成功（14.26秒），接口接受但客户端没有显示。腾讯仓库同症状反馈：https://github.com/Tencent/openclaw-weixin/issues/215 ，官方文件发送实现：https://github.com/Tencent/openclaw-weixin/blob/main/src/messaging/send.ts 。尚无官方结论证明是账号权限、隐藏字段或其他服务端限制。现在使用MP3附件；trace记录`audio_api_accepted`并明确`clientPlaybackConfirmed=false`，接口接受不代表客户端收到/可播放。

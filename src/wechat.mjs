@@ -22,7 +22,7 @@ export class ILinkClient {
     });
     const data = await response.json();
     if (data.errcode === -14 || data.ret === -14) throw new Error('wechat_session_expired');
-    if (!response.ok || (typeof data.ret === 'number' && data.ret !== 0)) throw new Error('wechat_request_failed');
+    if (!response.ok || (typeof data.ret === 'number' && data.ret !== 0) || (typeof data.errcode === 'number' && data.errcode !== 0)) throw new Error('wechat_request_failed');
     return data;
   }
   qr(signal) { return this.request(DEFAULT_BASE, '/ilink/bot/get_bot_qrcode?bot_type=3', { signal }); }
@@ -41,7 +41,7 @@ export class ILinkClient {
     const cipher = createCipheriv('aes-128-ecb', key, null);
     const encrypted = Buffer.concat([cipher.update(audio), cipher.final()]);
     const upload = await this.request(binding.base_url, '/ilink/bot/getuploadurl', { token: binding.token, signal,
-      body: { filekey, media_type: 4, to_user_id: binding.remote_user, rawsize: audio.length,
+      body: { filekey, media_type: 3, to_user_id: binding.remote_user, rawsize: audio.length,
         rawfilemd5: createHash('md5').update(audio).digest('hex'), filesize: encrypted.length,
         aeskey: key.toString('hex'), no_need_thumb: true } });
     if (!upload.upload_full_url && !upload.upload_param) throw new Error('wechat_upload_invalid');
@@ -59,8 +59,7 @@ export class ILinkClient {
     return this.request(binding.base_url, '/ilink/bot/sendmessage', { token: binding.token, signal,
       body: { msg: { from_user_id: '', to_user_id: binding.remote_user, client_id: clientId,
         message_type: 2, message_state: 2, context_token: inbox.context_token,
-        item_list: [{ type: 3, voice_item: { media, encode_type: 6, bits_per_sample: 16,
-          sample_rate: voice.sample_rate, playtime: voice.duration } }] } } });
+        item_list: [{ type: 4, file_item: { media, file_name: 'voice-reply.mp3', len: String(voice.audio.length) } }] } } });
   }
 }
 
@@ -225,6 +224,7 @@ export class WechatManager {
           this.store.voiceMedia(inbox.user_id, inbox.run_id, media);
           if (this.closed || !this.current(binding)) continue;
           await this.client.sendVoice(binding, inbox, voice, media, `pi-${inbox.id}-voice`, signal);
+          this.store.trace(inbox.run_id, 'audio_api_accepted', { format: 'mp3_file', durationMs: voice.duration, bytes: voice.audio.length, clientPlaybackConfirmed: false });
         }
         if (!this.closed && this.current(binding)) this.store.delivered(inbox.id);
       } catch (error) {
