@@ -72,7 +72,7 @@ if not (state/'users.json').exists():
  with opener.open(request,timeout=60) as response:assert json.load(response)['status']=='ok'
 # The environment file stores paths, not model secrets. The launcher reads the existing private model environment.
 env=private/'env'
-env.write_text('ASSISTANT_DATA_DIR='+str(data/'data')+'\nASSISTANT_ENGINE=pi\nASSISTANT_PORT=32215\nASSISTANT_BASE_PATH=/assistant\nASSISTANT_ORIGIN=https://123.56.157.198:32651\nASSISTANT_SECURE_COOKIES=on\nASSISTANT_SEARCH=on\nASSISTANT_WECHAT=on\nASSISTANT_WECHAT_PROTECTION='+str(protection)+'\nASSISTANT_SB_CONFIG='+str(sbconfig)+'\n');env.chmod(0o600)
+env.write_text('ASSISTANT_DATA_DIR='+str(data/'data')+'\nASSISTANT_ENGINE=pi\nASSISTANT_PORT=32215\nASSISTANT_BASE_PATH=/assistant\nASSISTANT_ORIGIN=https://123.56.157.198:32651\nASSISTANT_SECURE_COOKIES=on\nASSISTANT_SEARCH=on\nASSISTANT_TTS=on\nASSISTANT_WECHAT=on\nASSISTANT_WECHAT_PROTECTION='+str(protection)+'\nASSISTANT_SB_CONFIG='+str(sbconfig)+'\n');env.chmod(0o600)
 launcher=private/'start.sh'
 launcher.write_text('#!/bin/sh\nset -eu\numask 077\nset -a\n. "$HOME/.config/pi-agent/env"\n. "$HOME/.config/pi-agent-multi-tenant/env"\nset +a\ncd "$HOME/pi-agent-multi-tenant-live"\nASSISTANT_ADMIN_PASSWORD=$(/usr/bin/python3 -c \'import json;print(json.load(open("/home/admin/.config/pi-agent-multi-tenant/login.json"))["password"])\')\nexport ASSISTANT_ADMIN_PASSWORD\nexec /usr/local/bin/node src/main.mjs\n');launcher.chmod(0o700)
 subprocess.run(['chown','-R','admin:admin',str(private),str(data)],check=True)

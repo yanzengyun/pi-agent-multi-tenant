@@ -59,6 +59,12 @@ export class PiEngine {
         parameters: Type.Object({ content: Type.String({ maxLength: 8000 }) }),
         async execute(_id, { content }) { ctx.writeAgentProfile(content); return result('人物设定已保存，后续对话生效。'); } },
     );
+    if (ctx.speech) customTools.push({
+      name: 'voice_reply', label: 'Prepare Voice Reply',
+      description: '用户明确要求语音回复或自己的人物设定要求时，准备一段微信原生语音。每轮最多一次，中文口语内容最多200字符、60秒；长回答只读摘要。完成后系统会发送文字和语音，工具成功仅表示准备好，不代表已送达。失败时正常文字回复，不能声称已发语音。',
+      parameters: Type.Object({ text: Type.String({ maxLength: 200 }) }),
+      async execute(_id, { text }) { return result(JSON.stringify(await ctx.speech.prepare(text, ctx.signal))); },
+    });
     if (ctx.sandbox) customTools.push({
       name: 'cmd', label: 'Sandbox Command',
       description: '在当前用户独立的离线沙箱中执行Bash/Python命令。/work是自己的持久工作目录；不能访问宿主机、其他用户、模型密钥或网络。单次最多30秒，输出有限；修改人物设定用persona工具、笔记用note工具。不要声称沙箱命令能管理服务器。',

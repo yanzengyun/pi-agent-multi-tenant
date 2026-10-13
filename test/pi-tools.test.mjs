@@ -104,3 +104,23 @@ test('SDK cmd is scoped by the queue and cannot grant command access to persona 
   }
   assert.deepEqual(called,[{userId:user.id,command:'printf FAKE'}]);
 });
+
+test('voice tool prepares only the own run, exposes no receiver and remains absent in drafts', async t => {
+  const calls = [];
+  const { store, queue } = fixture(t, async (tools, prompt) => {
+    const tool = tools.find(tool => tool.name === 'voice_reply');
+    if (prompt === 'draft') { assert.equal(tool, undefined); return 'draft'; }
+    assert.ok(tool);
+    const result = await tool.execute('fake', { text: '你好', userId: 'another-user', receiver: 'another-peer' });
+    assert.equal(JSON.parse(result.content[0].text).prepared, true);
+    return '你好';
+  }, (userId, run) => ({ speech: { prepare: async text => { calls.push({ userId, runId: run.id, text }); return { prepared: true }; } } }));
+  const user = store.createUser('voice_alice', 'fake'), conversation = store.createConversation(user.id, 'fake');
+  const run = store.createRun(user.id, conversation.id, '用语音回复');
+  let settled = new Promise(resolve => queue.once('settled', resolve));
+  queue.kick(); await settled;
+  assert.deepEqual(calls, [{ userId: user.id, runId: run.id, text: '你好' }]);
+  store.createRun(user.id, conversation.id, 'draft', 'persona_draft');
+  settled = new Promise(resolve => queue.once('settled', resolve)); queue.kick(); await settled;
+  assert.equal(calls.length, 1);
+});

@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import QRCode from 'qrcode';
 
@@ -11,9 +11,9 @@ export function wechatBase(value) {
 }
 
 export class ILinkClient {
-  constructor() { this.uin = Buffer.from(String(randomBytes(4).readUInt32BE(0))).toString('base64'); }
+  constructor({ fetcher = fetch } = {}) { this.fetcher = fetcher; this.uin = Buffer.from(String(randomBytes(4).readUInt32BE(0))).toString('base64'); }
   async request(base, path, { token, body, signal, timeout = 15000, headers = {} } = {}) {
-    const response = await fetch(wechatBase(base) + path, {
+    const response = await this.fetcher(wechatBase(base) + path, {
       method: body === undefined ? 'GET' : 'POST', redirect: 'error',
       signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(timeout)]),
       headers: { 'Content-Type': 'application/json', ...headers,
@@ -35,6 +35,32 @@ export class ILinkClient {
       body: { msg: { from_user_id: '', to_user_id: binding.remote_user, client_id: clientId,
         message_type: 2, message_state: 2, context_token: inbox.context_token,
         item_list: [{ type: 1, text_item: { text } }] } } });
+  }
+  async uploadVoice(binding, voice, signal) {
+    const audio = Buffer.from(voice.audio), key = randomBytes(16), filekey = randomBytes(16).toString('hex');
+    const cipher = createCipheriv('aes-128-ecb', key, null);
+    const encrypted = Buffer.concat([cipher.update(audio), cipher.final()]);
+    const upload = await this.request(binding.base_url, '/ilink/bot/getuploadurl', { token: binding.token, signal,
+      body: { filekey, media_type: 4, to_user_id: binding.remote_user, rawsize: audio.length,
+        rawfilemd5: createHash('md5').update(audio).digest('hex'), filesize: encrypted.length,
+        aeskey: key.toString('hex'), no_need_thumb: true } });
+    if (!upload.upload_full_url && !upload.upload_param) throw new Error('wechat_upload_invalid');
+    const url = new URL(upload.upload_full_url || `https://novac2c.cdn.weixin.qq.com/c2c/upload?${new URLSearchParams({ encrypted_query_param: upload.upload_param, filekey })}`);
+    if (url.protocol !== 'https:' || !url.hostname.endsWith('.cdn.weixin.qq.com') || url.username || url.password ||
+        (url.port && url.port !== '443')) throw new Error('untrusted_wechat_cdn');
+    const response = await this.fetcher(url, { method: 'POST', redirect: 'error',
+      signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(20000)]),
+      headers: { 'Content-Type': 'application/octet-stream' }, body: encrypted });
+    const download = response.headers.get('x-encrypted-param');
+    if (!response.ok || !download) throw new Error('wechat_upload_failed');
+    return { encrypt_query_param: download, aes_key: Buffer.from(key.toString('hex')).toString('base64'), encrypt_type: 1 };
+  }
+  sendVoice(binding, inbox, voice, media, clientId, signal) {
+    return this.request(binding.base_url, '/ilink/bot/sendmessage', { token: binding.token, signal,
+      body: { msg: { from_user_id: '', to_user_id: binding.remote_user, client_id: clientId,
+        message_type: 2, message_state: 2, context_token: inbox.context_token,
+        item_list: [{ type: 3, voice_item: { media, encode_type: 6, bits_per_sample: 16,
+          sample_rate: voice.sample_rate, playtime: voice.duration } }] } } });
   }
 }
 
@@ -184,11 +210,21 @@ export class WechatManager {
         const reply = inbox.status === 'completed' ? inbox.response : '本次处理未完成，请稍后重试。';
         const characters = Array.from(reply), chunks = [];
         for (let offset = 0; offset < characters.length; offset += 3000) chunks.push(characters.slice(offset, offset + 3000).join(''));
-        for (let i = 0; i < chunks.length; i++) {
-          if (this.closed || !this.current(binding)) break;
-          const connectionSignal = this.controllers.get(binding.id)?.signal;
-          const signal = connectionSignal ? AbortSignal.any([this.abort.signal, connectionSignal]) : this.abort.signal;
-          await this.client.send(binding, inbox, chunks[i], `pi-${inbox.id}-${i}`, signal);
+        const voice = inbox.status === 'completed' ? this.store.voice(inbox.user_id, inbox.run_id) : undefined;
+        const connectionSignal = this.controllers.get(binding.id)?.signal;
+        const signal = connectionSignal ? AbortSignal.any([this.abort.signal, connectionSignal]) : this.abort.signal;
+        if (!voice?.text_sent) {
+          for (let i = 0; i < chunks.length; i++) {
+            if (this.closed || !this.current(binding)) break;
+            await this.client.send(binding, inbox, chunks[i], `pi-${inbox.id}-${i}`, signal);
+          }
+          if (!this.closed && this.current(binding) && voice) this.store.voiceTextSent(inbox.user_id, inbox.run_id);
+        }
+        if (voice && !this.closed && this.current(binding)) {
+          const media = voice.media ? JSON.parse(voice.media) : await this.client.uploadVoice(binding, voice, signal);
+          this.store.voiceMedia(inbox.user_id, inbox.run_id, media);
+          if (this.closed || !this.current(binding)) continue;
+          await this.client.sendVoice(binding, inbox, voice, media, `pi-${inbox.id}-voice`, signal);
         }
         if (!this.closed && this.current(binding)) this.store.delivered(inbox.id);
       } catch (error) {

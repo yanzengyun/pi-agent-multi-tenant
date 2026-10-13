@@ -32,7 +32,7 @@ export class RunQueue extends EventEmitter {
       const personaDraft = this.store.runMode(run.id) === 'persona_draft';
       const context = {
         personaDraft,
-        ...(personaDraft ? {} : this.contextFactory(run.user_id)),
+        ...(personaDraft ? {} : this.contextFactory(run.user_id, run)),
         userId: run.user_id, conversation: this.store.conversation(run.user_id, run.conversation_id),
         directory: this.store.directory, signal: controller.signal, emit,
         history: this.store.messages(run.user_id, run.conversation_id),

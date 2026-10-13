@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { ILinkClient } from './wechat.mjs';
 import { SilverBullet } from './silverbullet.mjs';
 import { Sandbox } from './sandbox.mjs';
+import { Speech } from './speech.mjs';
 
 process.umask(0o077);
 const host = process.env.ASSISTANT_HOST || '127.0.0.1';
@@ -35,6 +36,7 @@ const app = await makeServer({ store, engine, adminPassword: process.env.ASSISTA
   basePath: process.env.ASSISTANT_BASE_PATH || '',
   wechatClient: process.env.ASSISTANT_WECHAT === 'on' ? new ILinkClient() : undefined,
   wechatOptions: wechatProtection, silverbullet,
+  speech: process.env.ASSISTANT_TTS === 'on' ? new Speech(process.env.MINIMAX_CN_API_KEY) : undefined,
   sandbox: process.env.ASSISTANT_SANDBOX_SOCKET ? new Sandbox(process.env.ASSISTANT_SANDBOX_SOCKET) : undefined });
 app.server.listen(Number(process.env.ASSISTANT_PORT || 32214), host, () => {
   console.log(JSON.stringify({ status: 'listening', host, port: app.server.address().port, engine: mode }));

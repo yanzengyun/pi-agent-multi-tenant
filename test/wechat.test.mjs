@@ -194,3 +194,42 @@ test('failed processing notice does not block execution or final delivery', asyn
   assert.equal(store.deliveries().length, 0);
   await queue.close();
 });
+
+test('voice outbox isolates users and retries audio without repeating delivered text or uploads', async t => {
+  const { store, alice, bob, manager, client } = fixture(t);
+  const binding = store.bindWechat(alice.id, { token: 'fake-token', botId: 'voice-bot', remoteUser: 'voice-peer', baseUrl: 'https://ilinkai.weixin.qq.com' });
+  manager.ingest(binding, { message_type: 1, message_id: 'voice-request', from_user_id: binding.remote_user,
+    context_token: 'voice-context', item_list: [{ type: 1, text_item: { text: '用语音回复' } }] });
+  const run = store.pending()[0];
+  const voice = { audio: Buffer.from('fake-silk'), duration: 1000, sampleRate: 24000 };
+  assert.throws(() => store.saveVoice(bob.id, run.id, voice), /voice_run_not_found/);
+  store.saveVoice(alice.id, run.id, voice);
+  assert.equal(store.voice(bob.id, run.id), undefined);
+  let uploads = 0, voices = [];
+  client.uploadVoice = async (owner, audio) => {
+    uploads++; assert.equal(owner.user_id, alice.id); assert.equal(audio.duration, 1000);
+    return { encrypt_query_param: 'fake-ref', aes_key: 'fake-media-key', encrypt_type: 1 };
+  };
+  client.sendVoice = async (owner, inbox, _voice, media, id) => {
+    assert.equal(owner.remote_user, binding.remote_user); assert.equal(inbox.context_token, 'voice-context');
+    assert.equal(media.encrypt_query_param, 'fake-ref'); voices.push(id);
+    if (voices.length === 1) throw new Error('temporary_failure');
+  };
+  store.runStatus(run.id, 'completed', '文字结果');
+  await manager.flush();
+  assert.equal(store.deliveries().length, 1); assert.equal(store.voice(alice.id, run.id).text_sent, 1);
+  await manager.flush();
+  assert.equal(uploads, 1); assert.equal(voices[0], voices[1]); assert.equal(client.sent.length, 1);
+  assert.equal(store.deliveries().length, 0); assert.equal(store.voice(alice.id, run.id), undefined);
+});
+
+test('unbinding clears prepared audio and prevents its delivery', async t => {
+  const { store, alice, manager, client } = fixture(t);
+  const binding = store.bindWechat(alice.id, { token: 'fake-token', botId: 'unbind-voice-bot', remoteUser: 'unbind-voice-peer', baseUrl: 'https://ilinkai.weixin.qq.com' });
+  manager.ingest(binding, { message_type: 1, message_id: 'voice-unbind', from_user_id: binding.remote_user,
+    context_token: 'voice-context', item_list: [{ type: 1, text_item: { text: '用语音回复' } }] });
+  const run = store.pending()[0];
+  store.saveVoice(alice.id, run.id, { audio: Buffer.from('fake-silk'), duration: 1000, sampleRate: 24000 });
+  store.runStatus(run.id, 'completed', 'done'); manager.disconnect(alice.id); await manager.flush();
+  assert.equal(store.voice(alice.id, run.id), undefined); assert.equal(client.sent.length, 0);
+});

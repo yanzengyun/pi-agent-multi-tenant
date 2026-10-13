@@ -51,6 +51,9 @@ export class Store {
         id TEXT PRIMARY KEY, binding_id TEXT NOT NULL, bot_id TEXT NOT NULL, message_id TEXT NOT NULL,
         user_id TEXT NOT NULL REFERENCES users(id), context_token TEXT NOT NULL, run_id TEXT NOT NULL REFERENCES runs(id),
         delivery TEXT NOT NULL DEFAULT 'pending', UNIQUE(bot_id,message_id));
+      CREATE TABLE IF NOT EXISTS wechat_voice (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id), audio BLOB, duration INTEGER NOT NULL,
+        sample_rate INTEGER NOT NULL, media TEXT, text_sent INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS integrations (
         user_id TEXT NOT NULL REFERENCES users(id), kind TEXT NOT NULL,
         status TEXT NOT NULL, state TEXT NOT NULL, PRIMARY KEY(user_id,kind));
@@ -214,6 +217,7 @@ export class Store {
   removeWechat(userId) {
     const binding = this.wechatBinding(userId);
     if (binding) this.db.prepare("UPDATE wechat_inbox SET delivery='cancelled' WHERE binding_id=? AND delivery='pending'").run(binding.id);
+    this.db.prepare('DELETE FROM wechat_voice WHERE run_id IN (SELECT run_id FROM wechat_inbox WHERE user_id=?)').run(userId);
     this.db.prepare('DELETE FROM wechat_bindings WHERE user_id=?').run(userId);
     this.db.prepare("UPDATE wechat_logins SET status='cancelled',qr_token=NULL,qr_image=NULL WHERE user_id=?").run(userId);
   }
@@ -238,7 +242,24 @@ export class Store {
     return this.db.prepare(`SELECT i.*,r.status,r.response,r.error FROM wechat_inbox i JOIN runs r ON r.id=i.run_id
       WHERE i.delivery='pending' AND r.status IN ('completed','failed','interrupted') ORDER BY r.created_at,i.rowid`).all();
   }
-  delivered(id, status = 'sent') { this.db.prepare('UPDATE wechat_inbox SET delivery=? WHERE id=?').run(status, id); }
+  delivered(id, status = 'sent') {
+    this.db.prepare('UPDATE wechat_inbox SET delivery=? WHERE id=?').run(status, id);
+    this.db.prepare('DELETE FROM wechat_voice WHERE run_id=(SELECT run_id FROM wechat_inbox WHERE id=?)').run(id);
+  }
+  saveVoice(userId, runId, voice) {
+    if (!this.wechatInbox(userId, runId)) throw new Error('voice_run_not_found');
+    this.db.prepare('INSERT INTO wechat_voice(run_id,audio,duration,sample_rate) VALUES(?,?,?,?)').run(runId, voice.audio, voice.duration, voice.sampleRate);
+  }
+  voice(userId, runId) {
+    return this.db.prepare(`SELECT v.* FROM wechat_voice v JOIN runs r ON r.id=v.run_id
+      WHERE r.user_id=? AND v.run_id=?`).get(userId, runId);
+  }
+  voiceTextSent(userId, runId) {
+    if (this.voice(userId, runId)) this.db.prepare('UPDATE wechat_voice SET text_sent=1 WHERE run_id=?').run(runId);
+  }
+  voiceMedia(userId, runId, media) {
+    if (this.voice(userId, runId)) this.db.prepare('UPDATE wechat_voice SET media=? WHERE run_id=?').run(JSON.stringify(media), runId);
+  }
   latestWechatContext(bindingId) {
     return this.db.prepare("SELECT context_token FROM wechat_inbox WHERE binding_id=? AND message_id NOT LIKE 'reminder:%' ORDER BY rowid DESC LIMIT 1").get(bindingId)?.context_token;
   }

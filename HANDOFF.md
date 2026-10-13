@@ -9,6 +9,13 @@
 - 用户已要求开始开发，并指定GitHub仓库 https://github.com/yanzengyun/pi-agent-multi-tenant.git 上传代码。
 - 当前个人助手必须保持可用。没有授权把真实用户状态迁入开发环境；测试仅用虚构用户。
 
+## MiniMax微信语音回复（2026-10-14）
+
+- 用户指定官方API文档并授权复用当前key。现有MINIMAX_CN_API_KEY真实调用t2a_v2成功；没有读取/输出密钥。MiniMax speech-2.8-turbo、male-qn-qingse、PCM16/24kHz转SILK，新增voice_reply工具，默认文字，明确要求“用语音回复”时准备每轮最多一段200字/60秒。
+- 仅当前运行的微信inbox提供工具，用户与run固定在后端闭包中；网页与人物设定草稿不可用。准备完成后文字与语音通过原微信队列投递，微信语音消息type3/encode_type6，上传media_type4；新增私有wechat_voice表保留音频和CDN引用至发送完成，重试不再次合成、不重复已成功发送的文字，解绑清理。CDN只允许微信HTTPS域名，不携带模型或bot凭据。
+- 本地53项Node测试通过；服务器独立临时库真实Pi模型调用voice_reply、现有key TTS、SILK编码解码、微信真实CDN上传通过（3380ms/11424字节测试音频），未发送真实用户微信消息。客户端实际播放尚待用户用“请用语音回复一句你好”验收。
+- 已上线并确认运行进程ASSISTANT_TTS=on、voice表存在；服务器53项Node测试通过，服务与沙箱/watchdog健康，用户/绑定与原个人PID保持不变。备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261014-011744。ASSISTANT_TTS=on启用多用户版；原个人Pi未修改。更新部署脚本支持锁文件变化安装依赖与回滚；新依赖silk-wasm@3.7.1，不改变SDK版本。验证脚本scripts/verify-speech-live.mjs --verify-upload不会发送真实消息。
+
 ## 微信处理提示（2026-10-14）
 
 - 用户要求与主用户一致，每次处理前发送“✅ 已收到，pi 处理中...”。RunQueue新增await beforeRun，WechatManager按run所属用户与原inbox发送，稳定client_id带processing后缀；普通重放不重跑也不重复提示。

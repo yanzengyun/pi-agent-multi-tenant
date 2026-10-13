@@ -1,4 +1,4 @@
-"""Update live code without reinstalling dependencies; back up and preserve user identities."""
+"""Update live code including changed locked dependencies; back up and preserve user identities."""
 import ast
 import io
 import subprocess
@@ -29,7 +29,7 @@ digest=hashlib.sha256(json.dumps(before).encode()).hexdigest();c.close()
 (backup/'identity-hash.txt').write_text(digest)
 base=Path('/home/admin/pi-agent-multi-tenant-live')
 with tarfile.open(backup/'code.tar.gz','w:gz') as tar:
- for name in ['src','public','scripts','sandbox','docs','README.md','HANDOFF.md']:
+ for name in ['src','public','scripts','sandbox','docs','README.md','HANDOFF.md','package.json','package-lock.json']:
   if (base/name).exists():tar.add(base/name,arcname=name)
 route=Path('/etc/nginx/pi-app-routes.d/pi-multi-tenant.conf')
 (backup/'nginx.conf').write_text(route.read_text())
@@ -46,9 +46,23 @@ except Exception:
     raise
 archive=io.BytesIO()
 with tarfile.open(fileobj=archive,mode='w:gz') as tar:
-    for name in ['src','public','scripts','sandbox','docs','test','README.md','HANDOFF.md']:tar.add(root/name,arcname=name)
+    for name in ['src','public','scripts','sandbox','docs','test','README.md','HANDOFF.md','package.json','package-lock.json']:tar.add(root/name,arcname=name)
 try:
     subprocess.run(ssh+['tar -xzf - -C /home/admin/pi-agent-multi-tenant-live; chown -R admin:admin /home/admin/pi-agent-multi-tenant-live'],input=archive.getvalue(),check=True)
+    dependencies = r'''
+from pathlib import Path
+import subprocess
+backup=Path(Path('/tmp/pi-multi-tenant-last-backup.txt').read_text())
+import tarfile
+with tarfile.open(backup/'code.tar.gz') as tar:
+ try: previous=tar.extractfile('package-lock.json').read()
+ except KeyError: previous=None
+base=Path('/home/admin/pi-agent-multi-tenant-live')
+if previous != (base/'package-lock.json').read_bytes():
+ subprocess.run(['runuser','-u','admin','--','npm','ci','--omit=peer','--ignore-scripts','--no-audit','--no-fund'],cwd=base,check=True)
+print('locked_dependencies_ready')
+'''
+    subprocess.run(ssh+['python3 -'],input=dependencies,text=True,check=True)
     finish=r'''
 import subprocess,json,sqlite3,hashlib,time,urllib.request
 from pathlib import Path
@@ -78,6 +92,7 @@ import subprocess,tarfile
 backup=Path(Path('/tmp/pi-multi-tenant-last-backup.txt').read_text())
 subprocess.run(['systemctl','stop','pi-multi-tenant'],check=True)
 with tarfile.open(backup/'code.tar.gz') as tar:tar.extractall('/home/admin/pi-agent-multi-tenant-live')
+subprocess.run(['runuser','-u','admin','--','npm','ci','--omit=peer','--ignore-scripts','--no-audit','--no-fund'],cwd='/home/admin/pi-agent-multi-tenant-live',check=True)
 Path('/etc/nginx/pi-app-routes.d/pi-multi-tenant.conf').write_text((backup/'nginx.conf').read_text())
 subprocess.run(['systemctl','start','pi-multi-tenant'],check=True)
 subprocess.run(['nginx','-t'],check=True,capture_output=True);subprocess.run(['systemctl','reload','nginx'],check=True)
