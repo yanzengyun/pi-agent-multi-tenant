@@ -84,6 +84,12 @@ async function showConsole() {
   const me = await api('/api/me');
   if (me.role !== 'admin') throw new Error('只有管理员可以使用此管理台');
   const data = await api('/api/admin/users');
+  const select = $('#invite-target'), prior = select.value; select.replaceChildren();
+  const fresh = document.createElement('option'); fresh.value = ''; fresh.textContent = '新用户注册'; select.append(fresh);
+  for (const user of data.users.filter(user => user.role === 'user')) {
+    const option = document.createElement('option'); option.value = user.id; option.textContent = `激活已有账号：${user.username}`; select.append(option);
+  }
+  select.value = prior; await refreshInvites();
   $('#login').hidden = true; $('#console').hidden = false;
   $('#mode').textContent = data.mode === 'mock' ? '测试模式：不调用真实模型' : 'Pi SDK：真实模型模式';
   $('#users').replaceChildren();
@@ -103,7 +109,8 @@ async function showConsole() {
       if (data.silverbulletEnabled) controls.append(user.silverbullet.status === 'ready'
         ? action('笔记登录信息', async () => {
           const login = await api(`/api/admin/users/${user.id}/silverbullet/credentials`, 'POST', {});
-          $('#sb-url').value = login.url; $('#sb-username').value = login.username; $('#sb-password').value = login.password;
+          $('#sb-url').value = login.url; $('#sb-username').value = login.username; $('#sb-password').value = login.password || '';
+          $('#sb-password-state').textContent = login.passwordManagedByUser ? '用户已自行设置密码，后台不显示。' : '';
           $('#sb-password').type = 'password'; $('#sb-dialog').showModal();
         })
         : action('准备笔记空间', async () => { await api(`/api/admin/users/${user.id}/silverbullet`, 'POST', {}); await showConsole(); }));
@@ -156,5 +163,23 @@ $('#user-form').addEventListener('submit', async event => {
 });
 $('#logout').addEventListener('click', async () => {
   try { await api('/api/logout', 'POST', {}); location.reload(); } catch (error) { notice(error.message); }
+});
+async function refreshInvites() {
+  const data = await api('/api/admin/invites'); $('#invite-list').replaceChildren();
+  for (const invite of data.invitations) {
+    const row = document.createElement('article'), label = document.createElement('span');
+    const expired = invite.expires_at <= Date.now(), inactive = invite.used_at || invite.revoked || expired;
+    label.textContent = `${invite.target_username || '新用户'} · ${invite.used_at ? '已使用' : invite.revoked ? '已撤销' : expired ? '已过期' : '待使用'} · ${new Date(invite.expires_at).toLocaleString()}`;
+    row.append(label);
+    if (!inactive) row.append(action('撤销邀请', async () => { await api('/api/admin/invites/' + invite.id, 'DELETE', {}); await refreshInvites(); }));
+    $('#invite-list').append(row);
+  }
+}
+$('#invite-form').addEventListener('submit', async event => {
+  event.preventDefault(); const button = event.target.querySelector('button'); button.disabled = true;
+  try {
+    const result = await api('/api/admin/invites', 'POST', { userId: $('#invite-target').value || undefined });
+    $('#invite-url').value = result.url; $('#invite-result').hidden = false; await refreshInvites(); notice('邀请已生成，请复制链接交给对应用户。');
+  } catch (error) { notice(error.message); } finally { button.disabled = false; }
 });
 showConsole().catch(() => {});

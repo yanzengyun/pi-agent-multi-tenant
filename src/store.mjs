@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, chmodSync } from 'node:fs';
+import { mkdirSync, chmodSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -57,6 +57,13 @@ export class Store {
       CREATE TABLE IF NOT EXISTS reminders (
         id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), text TEXT NOT NULL,
         next_at INTEGER NOT NULL, repeat_daily INTEGER NOT NULL, status TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS invitations (
+        id TEXT PRIMARY KEY, hash TEXT UNIQUE NOT NULL, target_user TEXT REFERENCES users(id),
+        expires_at INTEGER NOT NULL, used_at INTEGER, revoked INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS run_modes (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id), mode TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS agent_profiles (
+        user_id TEXT PRIMARY KEY REFERENCES users(id), content TEXT NOT NULL);
     `);
   }
   close() { this.db.close(); }
@@ -77,6 +84,55 @@ export class Store {
       JOIN users u ON u.id=s.user_id WHERE s.hash=? AND s.expires_at>?`).get(hash, Date.now());
   }
   deleteToken(hash) { this.db.prepare('DELETE FROM auth_sessions WHERE hash=?').run(hash); }
+  revokeUserTokens(userId) { this.db.prepare('DELETE FROM auth_sessions WHERE user_id=?').run(userId); }
+  setPassword(userId, password) {
+    this.db.prepare('UPDATE users SET password=? WHERE id=?').run(password, userId);
+    this.revokeUserTokens(userId);
+    this.db.prepare('UPDATE invitations SET revoked=1 WHERE target_user=? AND used_at IS NULL').run(userId);
+  }
+  newInvite(hash, targetUser = null) {
+    if (targetUser) this.db.prepare('UPDATE invitations SET revoked=1 WHERE target_user=? AND used_at IS NULL').run(targetUser);
+    const id = randomUUID(), expiresAt = Date.now() + 7 * 86400000;
+    this.db.prepare('INSERT INTO invitations VALUES (?,?,?,?,NULL,0)').run(id, hash, targetUser, expiresAt);
+    return { id, expiresAt };
+  }
+  invites() {
+    return this.db.prepare(`SELECT i.id,u.username AS target_username,i.expires_at,i.used_at,i.revoked FROM invitations i
+      LEFT JOIN users u ON u.id=i.target_user ORDER BY i.rowid DESC LIMIT 100`).all();
+  }
+  invitation(hash) {
+    return this.db.prepare('SELECT * FROM invitations WHERE hash=? AND revoked=0 AND used_at IS NULL AND expires_at>?').get(hash, Date.now());
+  }
+  revokeInvite(id) { this.db.prepare('UPDATE invitations SET revoked=1 WHERE id=?').run(id); }
+  acceptInvite(hash, username, password) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const invite = this.invitation(hash);
+      if (!invite) throw new Error('invalid_invite');
+      let user;
+      if (invite.target_user) {
+        user = this.userById(invite.target_user);
+        if (!user || user.role !== 'user' || user.username !== username) throw new Error('invite_username_mismatch');
+        this.setPassword(user.id, password);
+      } else {
+        if (this.user(username)) throw new Error('username_exists');
+        user = this.createUser(username, password);
+      }
+      this.db.prepare('UPDATE invitations SET used_at=? WHERE id=?').run(Date.now(), invite.id);
+      this.db.exec('COMMIT');
+      return { id: user.id, username: user.username, role: user.role };
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  agentProfile(userId) { return this.db.prepare('SELECT content FROM agent_profiles WHERE user_id=?').get(userId)?.content || ''; }
+  setAgentProfile(userId, content) {
+    if (!this.userById(userId)) throw new Error('Unknown user');
+    if (typeof content !== 'string' || content.length > 8000) throw new Error('Invalid persona');
+    const workspace = join(this.directory, 'tenants', userId, 'workspace');
+    mkdirSync(workspace, { recursive: true, mode: 0o700 });
+    const file = join(workspace, 'AGENTS.md');
+    writeFileSync(file, content, { mode: 0o600 }); chmodSync(file, 0o600);
+    this.db.prepare('INSERT INTO agent_profiles VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET content=excluded.content').run(userId, content);
+  }
   memory(userId) { return this.db.prepare('SELECT content FROM memories WHERE user_id=?').get(userId)?.content || ''; }
   writeMemory(userId, content) {
     this.db.prepare('INSERT INTO memories VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET content=excluded.content').run(userId, content);
@@ -101,12 +157,14 @@ export class Store {
     if (!this.conversation(userId, id)) throw new Error('Conversation not found');
     this.db.prepare('INSERT INTO messages VALUES (NULL,?,?,?,?)').run(id, role, content, Date.now());
   }
-  createRun(userId, conversationId, prompt) {
+  createRun(userId, conversationId, prompt, mode) {
     if (!this.conversation(userId, conversationId)) throw new Error('Conversation not found');
     const id = randomUUID();
     this.db.prepare('INSERT INTO runs VALUES (?,?,?,?,?,NULL,NULL,?)').run(id, userId, conversationId, prompt, 'queued', Date.now());
+    if (mode) this.db.prepare('INSERT INTO run_modes VALUES (?,?)').run(id, mode);
     return this.run(userId, id);
   }
+  runMode(id) { return this.db.prepare('SELECT mode FROM run_modes WHERE run_id=?').get(id)?.mode; }
   run(userId, id) { return this.db.prepare('SELECT * FROM runs WHERE id=? AND user_id=?').get(id, userId); }
   recentRuns(userId) {
     return this.db.prepare(`SELECT id,status,substr(prompt,1,120) AS preview,created_at FROM runs

@@ -18,7 +18,10 @@ const report = {};
 const auth = await api('/api/login', null, 'POST', login); assert.equal(auth.status, 200);
 const token = auth.data.token;
 const oldMemory = (await api('/api/memory', token)).data.content;
+const probe = new Store('/home/admin/.local/share/pi-agent-multi-tenant/data');
+const oldProfile = probe.agentProfile(auth.data.user.id);
 try {
+  probe.setAgentProfile(auth.data.user.id, 'FAKE_AGENT_CONFIG_ONLY：这是虚构配置验收，不改变工具权限。');
   await api('/api/memory', token, 'PUT', { content: 'FAKE_LIVE_MODEL_OK' });
   const c = (await api('/api/conversations', token, 'POST', { title: '部署验收（虚构数据）' })).data;
   const run = (await api(`/api/conversations/${c.id}/runs`, token, 'POST', { prompt: '必须调用memory_read工具，然后只回复读到的测试代号。' })).data;
@@ -32,8 +35,23 @@ try {
   const events = (await api(`/api/runs/${run.id}/trace`, token)).data.events;
   assert.ok(events.some(e => e.kind === 'sdk_event' && e.payload.type === 'tool_execution_start' && e.payload.toolName === 'memory_read'));
   assert.ok(events.some(e => e.kind === 'context' && e.payload.activeTools.includes('reminder_create')));
+  assert.ok(events.some(e => e.kind === 'context' && e.payload.system.includes('FAKE_AGENT_CONFIG_ONLY') &&
+    !e.payload.activeTools.some(tool => ['bash','read','write','edit'].includes(tool))));
   report.real_model_and_memory_tool = true;
-} finally { await api('/api/memory', token, 'PUT', { content: oldMemory }); await api('/api/logout', token, 'POST', {}); }
+  report.real_agent_preferences_and_tool_boundary = true;
+  const persona = (await api(`/api/conversations/${c.id}/runs`, token, 'POST', { prompt: '这是测试账号明确授权修改自己的人物设定：请先调用persona_read，再调用persona_write，把人物设定完整保存为 FAKE_PERSONA_WRITE_OK。' })).data;
+  let personaResult;
+  for (let i=0;i<130;i++) {
+    personaResult=(await api('/api/runs/'+persona.id,token)).data;
+    if (!['queued','running'].includes(personaResult.status)) break;
+    await new Promise(r=>setTimeout(r,1000));
+  }
+  assert.equal(personaResult.status,'completed'); assert.match(probe.agentProfile(auth.data.user.id),/FAKE_PERSONA_WRITE_OK/);
+  report.real_persona_tools=true;
+} finally {
+  probe.setAgentProfile(auth.data.user.id, oldProfile); probe.close();
+  await api('/api/memory', token, 'PUT', { content: oldMemory }); await api('/api/logout', token, 'POST', {});
+}
 
 const directory = mkdtempSync(join(tmpdir(), 'pi-live-sb-probe-')), store = new Store(directory);
 const sb = new SilverBullet(store, JSON.parse(readFileSync('/home/admin/.config/pi-agent-multi-tenant/silverbullet.json')));

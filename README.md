@@ -2,7 +2,9 @@
 
 一键连接微信的多租户个人助手。目标是一个管理员控制台、一个 Pi SDK 后端、按用户隔离的数据，以及共用的 SilverBullet 等基础服务。
 
-**当前版本：可扫码接入的独立服务，已部署。** 管理地址为 `https://123.56.157.198:32651/assistant/`，使用现有管理员密码网关，后台账号为 admin；后台密码保存在本机 `alibaba_host/config/multi-tenant-login.json` 和服务器 `/home/admin/.config/pi-agent-multi-tenant/login.json`，不进Git。管理员创建用户后让本人扫码，并先在微信发一条消息。真实二维码和模型调用已经验收，最终微信收发需真人扫码后确认。
+**当前版本：可扫码接入的独立服务，已部署。** 管理地址为 `https://123.56.157.198:32651/assistant/`，使用现有管理员密码网关，后台账号为 admin；后台密码保存在本机 `alibaba_host/config/multi-tenant-login.json` 和服务器 `/home/admin/.config/pi-agent-multi-tenant/login.json`，不进Git。管理员创建用户后让本人扫码，并先在微信发一条消息。真实二维码、模型调用与已有用户微信收发元数据已验证。
+
+已增加邀请注册与用户自助页：`https://123.56.157.198:32651/assistant/account`。用户不需要管理员网关口令；管理员在原后台生成7天有效的一次性邀请，用户凭链接注册、登录、绑定自己的微信，设置笔记用户名和人物设定。公开注册必须有有效邀请，管理员仍可手动创建用户。
 
 ## 已实现
 
@@ -22,16 +24,23 @@
 - 自动创建 SilverBullet 人类账号、非管理员 Agent 账号、私有 Space 和受限 token；模型只获得当前用户的 `note_read`、`note_write` 工具。
 - 笔记写入使用 ETag 防止覆盖其他修改；管理员可显式查看人类登录信息，Agent token 不返回管理页面或模型。
 - 持久化的一次性／每日文本提醒，管理员页面和模型的 reminder_create/list/cancel 工具均限定当前用户。时间需包含时区，默认北京时间；每日按24小时重复，不调用模型生成提醒。
+- 邀请只存SHA256摘要，可撤销、过期、一次性消费；注册角色固定user。链接token放在URL fragment，注册通过POST提交，避免进入Nginx访问日志中的请求URL。
+- 用户自助设置笔记用户名，主页与笔记使用同一密码，改名保留原Space、Agent token和笔记。用户自设的笔记密码不在应用数据库保留明文，管理员页面不再展示其密码。新注册时笔记密码同步为主页密码；修改主页密码同步修改笔记密码，失败时保留主页旧密码。旧用户在自助页面验证主页密码后主动统一，普通登录不重置原笔记密码。
+- 每用户人物设定（底层AGENTS.md，最多8000字符），数据库为配置来源，镜像写入 `tenants/<uuid>/workspace/AGENTS.md`，后续模型请求显式注入并进入trace。手工修改镜像文件不等于修改配置；不发现宿主机AGENTS、技能或扩展，工具权限不变。
+
+- 人物设定可手动编辑或由网页AI生成草稿后确认保存；草稿运行只开放persona_read，禁止写记忆、笔记、提醒和设定。微信明确要求修改时可调用persona_read/write，固定到当前用户。
 
 ## 仍需实现
 
-1. 真实微信扫码、接收和回复验收，包括会话过期、重连及异常网络；目前只有模拟微信测试通过。
+1. 微信长时间运行、会话过期和异常网络下的重连验证。
 2. 多人容量及长时间运行验证，服务器资源上限已配置，不作为容量承诺。
 3. 定时模型复盘和复杂周期，目前只支持一次性／每日文本提醒。
 4. 受限健康/投资工具、历史关键词搜索、用户禁用、额度统计和限额；运行记录页面后续补刷新与筛选。
-5. 需要通用脚本时增加独立沙箱；上线前完成 HTTPS 入口、备份恢复和容量测试。
+5. 需要通用脚本时增加独立沙箱；扩容前完成容量及完整恢复演练。
 
-启用微信后，管理员创建用户并展示该用户的登录二维码，用户扫码后在微信使用；配置了 SilverBullet 时扫码确认会触发其账号与 Space 创建。未启用微信时不生成二维码。用户不需要本项目的聊天页面；如直接浏览笔记，访问自己的 SilverBullet 页面。
+管理员可直接建用户并展示微信二维码，也可发送邀请让用户自己注册、绑定。自助页只管理账号、微信、笔记登录与偏好，没有网页聊天。用户聊天继续使用微信，笔记使用自己的 SilverBullet 页面。
+
+已有用户需要进入自助页时，在邀请用途选择“激活已有账号”。接受邀请会设置该账号的网页登录密码，保持原UUID、微信归属和私人数据，撤销旧网页登录会话；用户名仍是原账号名。重新生成或修改密码会撤销旧的已有账号激活邀请。只把此类邀请交给原账号本人。
 
 ## 架构
 
@@ -115,6 +124,13 @@ tenants/<服务端生成的UUID>/
 | `GET /api/admin/users/:id/runs/:runId/trace` | 管理员查看指定用户运行详情，错配ID返回404 |
 | `GET/POST /api/admin/users/:id/reminders` | 管理员查看／添加对应用户提醒 |
 | `DELETE /api/admin/users/:id/reminders/:id` | 管理员取消对应用户提醒及尚未投递的提醒 |
+| `GET/POST /api/admin/invites`、`DELETE /api/admin/invites/:id` | 管理员查看／生成／撤销邀请 |
+| `POST /api/invitation`、`POST /api/register` | 验证邀请及受邀注册，无有效邀请不能注册 |
+| `GET /api/account`、`GET/PUT /api/account/agents` | 普通用户自己的状态及人物设定 |
+| `POST /api/account/password` | 校验旧密码后同步修改主页和笔记密码，撤销旧会话 |
+| `POST /api/account/persona-assist`、`GET /api/account/persona-assist/:runId` | 当前用户的AI人物设定草稿，生成不保存 |
+| `/api/account/wechat/...` | 已登录用户自己的扫码状态及绑定操作 |
+| `POST /api/account/silverbullet/login` | 验证主页密码，修改笔记用户名并统一密码；不接受其他用户ID |
 | `GET/PUT /api/notes/:encodedPage` | 当前用户的笔记，写入已有笔记需 ETag |
 
 Cookie供管理台使用，Bearer供集成/测试使用。用户权限不接受请求正文、URL参数或模型输出中的身份声明。每次查询与工具闭包都绑定认证用户。
@@ -138,11 +154,13 @@ Cookie供管理台使用，Bearer供集成/测试使用。用户权限不接受�
 
 `scripts/deploy-live.py` 部署到 `/home/admin/pi-agent-multi-tenant-live`，状态为 `/home/admin/.local/share/pi-agent-multi-tenant/data`，私有配置为 `/home/admin/.config/pi-agent-multi-tenant`。它与旧开发实例、个人Pi的状态分开。`pi-multi-tenant.service` 已启用开机启动，异常退出自动重启；MemoryHigh=256MiB、MemoryMax=384MiB、CPUQuota=50%，超限可能终止本后台，不会借此扩大个人助手权限。
 
-后台仅监听127.0.0.1:32215，`ASSISTANT_BASE_PATH=/assistant`、Secure Cookie、固定Origin均已启用。现有Nginx32651为 `/assistant/` 提供密码网关；个人trace仍在原根路径。新笔记容器 `silverbullet-multi-tenant` 监听127.0.0.1:32216，数据为 `/opt/pi-agent-multi-tenant-sb/data`，restart=unless-stopped，限制128MiB/0.25CPU。
+后台仅监听127.0.0.1:32215，`ASSISTANT_BASE_PATH=/assistant`、Secure Cookie、固定Origin均已启用。现有Nginx32651保护管理台及管理员接口，个人trace仍在原根路径。用户account/join页面和所需登录、自助接口允许通过应用自身认证访问，普通用户不会获得管理员网关口令。新笔记容器 `silverbullet-multi-tenant` 监听127.0.0.1:32216，数据为 `/opt/pi-agent-multi-tenant-sb/data`，restart=unless-stopped，限制128MiB/0.25CPU。
 
-`/users/<uuid>/` 使用SilverBullet自身账号及Space权限，**不共享管理员网关口令**。笔记用户可用其人类账号登录自己的空间；后台和个人trace仍要求管理员网关认证。Agent token只用于服务器内部访问。两条路由位于 `/etc/nginx/pi-app-routes.d/pi-multi-tenant.conf`。
+`/users/<uuid>/` 使用SilverBullet自身账号及Space权限，**不共享管理员网关口令**。笔记用户可用其人类账号登录自己的空间；后台和个人trace仍要求管理员网关认证。Agent token只用于服务器内部访问。原生认证路由 `/.auth/central/` 也转发到笔记服务；server-config.primaryUrl必须为公网Origin，不能填内部loopback地址，否则浏览器跳转失败。内部管理请求使用公共Host和HTTPS代理头。路由位于 `/etc/nginx/pi-app-routes.d/pi-multi-tenant.conf`。
 
 重新部署会短暂停止本后台。脚本拒绝队列中有运行或等待任务的部署，先检查可用内存，恢复后再启动。不要同时启动开发实例导入正式状态，或重载个人Pi来更新本项目。部署失败可能需要人工恢复，当前脚本不是支持原子回滚的发布系统。
+
+仅更新源码使用 `scripts/update-live.py`：队列空闲后停止独立后台，备份数据库、源码和Nginx路由到私有 `backups/`，更新后检查健康、原用户/绑定和个人Pi PID。失败时恢复原代码及路由，不覆盖在线数据库；此脚本不安装或升级依赖。
 
 ```sh
 systemctl status pi-multi-tenant
@@ -168,7 +186,7 @@ docker ps --filter name=silverbullet-multi-tenant
 
 ## 验证结果
 
-2026-10-13，自动测试覆盖认证、权限、跨用户记忆/聊天/run/trace、Origin、请求体限制、串行队列、失败恢复、超时、扫码取消/过期/身份保护、发送者校验、投递重试、重启恢复、管理员trace权限，以及提醒持久化、时区/日期校验、漏执行合并和最新用户上下文。
+2026-10-13，37项自动测试通过，覆盖认证、权限、跨用户记忆/聊天/run/trace、Origin、请求体限制、串行队列、失败恢复、超时、扫码取消/过期/身份保护、发送者校验、投递重试、重启恢复、管理员trace权限、提醒持久化、时区/日期校验、漏执行合并，以及邀请、用户自助AGENTS隔离、笔记账号改名与丢失响应恢复。
 
 独立服务器的真实 Pi SDK 测试已通过：两个虚构用户调用memory_read，返回各自测试代号，系统记忆注入正确；跨用户trace404；恢复SDK历史正确；官方搜索成功。生产个人助手的进程与配置未变，原trace HTTP200。报告见 `test/live-verification.json`，没有私人聊天正文或密钥。
 
@@ -178,4 +196,8 @@ docker ps --filter name=silverbullet-multi-tenant
 
 公网TLS验证、匿名401、登录、Secure且限定路径的Cookie及退出撤销已通过。浏览器验收使用临时公开Playwright容器，程序见 `scripts/verify-ui.mjs`、`scripts/verify-ui-container.py`；生成的虚构账号通过 `cleanup-ui-probe.py` 限定所有权后清理。此检查不代替真人微信收发验收。
 
+`verify-invites-ui.mjs` 已实测无需管理员口令的邀请注册、拒绝重复邀请、人物设定保存、AI只读草稿生成、用户自选笔记用户名并登录、用户密码不保留、扫码PNG、统一密码修改后重新登录笔记与旧网页会话撤销；用户访问管理接口和个人trace均401，JS错误0。真实Pi模型上下文已验证AGENTS内容注入且bash/read/write/edit不在工具名单。后续真实用户扫码及回复发送确认已有服务器元数据验证，未导出私人聊天正文。
+
 后续会话先读 [HANDOFF.md](HANDOFF.md)。
+
+2026-10-13 笔记认证排查：浏览器验证弹窗来自根路径原生认证请求落入管理员Basic网关，其后还有错误的primaryUrl内部地址。修复专用认证路由及公网Origin后，浏览器验收检查整个笔记导航无WWW-Authenticate挑战，登录后实际读取自身index.md成功；后台与个人trace继续401保护。

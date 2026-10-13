@@ -33,7 +33,7 @@ export class PiEngine {
       getPrompts: () => ({ prompts: [], diagnostics: [] }),
       getThemes: () => ({ themes: [], diagnostics: [] }),
       getAgentsFiles: () => ({ agentsFiles: [] }),
-      getSystemPrompt: () => systemPrompt(ctx.memory()), getSystemPromptSource: () => undefined,
+      getSystemPrompt: () => systemPrompt(ctx.memory(), ctx.agentProfile?.()), getSystemPromptSource: () => undefined,
       getAppendSystemPrompt: () => [], getAppendSystemPromptSources: () => [],
       extendResources() {}, async reload() {},
     };
@@ -46,6 +46,13 @@ export class PiEngine {
         parameters: Type.Object({ content: Type.String({ maxLength: 8000 }) }),
         async execute(_id, { content }) { ctx.writeMemory(content); return result('Memory saved'); } },
     ];
+    customTools.push(
+      { name: 'persona_read', label: 'Read Persona', description: 'Read only this user’s 人物设定 (assistant personality and preferences).',
+        parameters: Type.Object({}), async execute() { return result(ctx.agentProfile()); } },
+      { name: 'persona_write', label: 'Save Persona', description: 'Only when the user explicitly requests changing 人物设定. Read the existing setting first; preserve unrelated preferences. Cannot change permissions.',
+        parameters: Type.Object({ content: Type.String({ maxLength: 8000 }) }),
+        async execute(_id, { content }) { ctx.writeAgentProfile(content); return result('人物设定已保存，后续对话生效。'); } },
+    );
     if (ctx.notes) customTools.push(
       { name: 'note_read', label: 'Note Read', description: 'Read a Markdown page from this user’s SilverBullet space. Never accepts another space URL.',
         parameters: Type.Object({ page: Type.String({ maxLength: 120 }) }),
@@ -78,6 +85,7 @@ export class PiEngine {
         return result(JSON.stringify(data));
       },
     });
+    if (ctx.personaDraft) customTools.splice(0, customTools.length, ...customTools.filter(tool => tool.name === 'persona_read'));
     const { session } = await createAgentSession({ cwd: workspace, agentDir, model, modelRuntime: runtime,
       thinkingLevel: this.config.thinkingLevel, resourceLoader, sessionManager: manager,
       settingsManager: SettingsManager.inMemory({ compaction: { enabled: true }, retry: { enabled: false } }),

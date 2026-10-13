@@ -66,7 +66,7 @@ for _ in range(40):
  except OSError:time.sleep(.5)
 else:raise SystemExit('Independent SilverBullet failed to start')
 if not (state/'users.json').exists():
- payload={'primaryUrl':sb['baseUrl'],'adminUsername':sb['username'],'adminPassword':sb['password'],
+ payload={'primaryUrl':sb['publicUrl'],'adminUsername':sb['username'],'adminPassword':sb['password'],
   'space':{'name':'管理初始化','prefix':'/bootstrap','folder':'spaces/bootstrap','revisions':'disabled'}}
  request=urllib.request.Request(sb['baseUrl']+'/.setup/api/complete',method='POST',headers={'Content-Type':'application/json'},data=json.dumps(payload).encode())
  with opener.open(request,timeout=60) as response:assert json.load(response)['status']=='ok'
@@ -91,13 +91,32 @@ for _ in range(40):
 else:raise SystemExit('Assistant failed health check')
 route=Path('/etc/nginx/pi-app-routes.d/pi-multi-tenant.conf')
 text='''location = /assistant { return 302 /assistant/; }
-location ^~ /assistant/ {
+location /assistant/ {
  proxy_pass http://127.0.0.1:32215;
  proxy_http_version 1.1;
  proxy_set_header Host $http_host;
  proxy_set_header X-Forwarded-Proto https;
+ proxy_set_header X-Real-IP $remote_addr;
  proxy_set_header Authorization "";
  proxy_read_timeout 70s;
+}
+location ~ ^/assistant/(account/?|join/?|account\.js|style\.css|api/(login|logout|me|register|invitation|account(/.*)?))$ {
+ auth_basic off;
+ proxy_pass http://127.0.0.1:32215;
+ proxy_http_version 1.1;
+ proxy_set_header Host $http_host;
+ proxy_set_header X-Forwarded-Proto https;
+ proxy_set_header X-Real-IP $remote_addr;
+ proxy_set_header Authorization "";
+ proxy_read_timeout 70s;
+}
+location ^~ /.auth/central/ {
+ # Native SilverBullet login and assets use root URLs; user authentication stays in SilverBullet.
+ auth_basic off;
+ proxy_pass http://127.0.0.1:32216;
+ proxy_set_header Host $http_host;
+ proxy_set_header X-Forwarded-Proto https;
+ proxy_set_header Authorization "";
 }
 location ^~ /users/ {
  # SilverBullet enforces each user's own password and Space permissions.

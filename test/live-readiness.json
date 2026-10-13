@@ -1,5 +1,5 @@
 {
-  "automated_tests": 28,
+  "automated_tests": 37,
   "real_model_memory_tool": true,
   "reminder_tools_loaded": true,
   "live_silverbullet_isolation": true,
@@ -15,5 +15,16 @@
   "note_user_personal_trace_401": true,
   "browser_qr_image": true,
   "browser_js_errors": 0,
-  "real_wechat_scan_and_message_verified": false
+  "real_wechat_scan_and_message_verified": true,
+  "invitation_registration": true,
+  "single_use_invitation": true,
+  "user_preferences_browser": true,
+  "chosen_note_credentials_browser": true,
+  "chosen_password_not_retained": true,
+  "account_password_rotation": true,
+  "real_agent_preferences_and_tool_boundary": true,
+  "unified_note_password_rotation": true,
+  "native_login_without_basic_challenge": true,
+  "ai_draft_read_only": true,
+  "real_persona_tools": true
 }

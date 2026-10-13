@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><!--APP_BASE--><meta name="viewport" content="width=device-width,initial-scale=1"><title>我的助手</title><link rel="stylesheet" href="style.css"><script src="account.js" defer></script></head>
+<body><main>
+  <header><p class="eyebrow">PI ASSISTANT</p><h1>我的助手</h1><p>管理自己的微信连接、笔记账号和人物设定。</p></header>
+  <p id="notice" role="status"></p>
+  <section id="register" hidden><h2 id="register-title">邀请注册</h2><form id="register-form"><label>账号<input name="username" pattern="[a-zA-Z0-9_-]{1,64}" maxlength="64" autocomplete="username" required></label><label>登录密码（至少12位）<input name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label><button>完成注册</button></form><p class="muted">邀请链接只能使用一次。已有账号的激活不会删除聊天或笔记。</p></section>
+  <section id="login"><h2>登录</h2><form id="login-form"><label>账号<input name="username" autocomplete="username" required></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><button>登录</button></form><p class="muted">注册需要管理员提供邀请链接。</p></section>
+  <div id="account" hidden>
+    <section class="overview"><div><h2 id="account-name"></h2><p>这里的设置仅用于你的助手。</p></div><button id="logout" class="secondary">退出</button></section>
+    <section><h2>微信</h2><p id="wechat-state"></p><button id="wechat-bind">扫码连接</button> <button id="wechat-disconnect" class="secondary" hidden>解除连接</button><p class="muted">连接后，在微信发一条消息即可开始聊天。扫码可能切换已有连接，请使用未连接其他助手的微信。</p><div id="qr" hidden><img id="qr-image" alt="微信登录二维码" width="280" height="280"><p id="qr-status" role="status"></p><button id="qr-cancel" class="secondary">取消扫码</button></div></section>
+    <section><h2>笔记账号</h2><p id="notes-state"></p><a id="notes-link" target="_blank" rel="noopener" hidden>打开我的笔记</a><form id="notes-form"><label>笔记用户名<input name="username" pattern="[a-zA-Z0-9_-]{1,64}" maxlength="64" autocomplete="off" required></label><label>验证当前主页登录密码<input name="password" type="password" minlength="12" maxlength="256" autocomplete="current-password" required></label><button>保存并统一笔记密码</button></form><p class="muted">笔记与主页共用同一个密码。旧账号在这里验证主页密码后完成统一，原笔记保留。</p></section>
+    <section><h2>人物设定</h2><p class="muted">设置称呼、回复语言、风格和习惯。保存后会作为模型提示词用于后续对话；这些偏好不会扩大工具或文件权限。</p><form id="persona-assist-form"><label>让 AI 帮你写<textarea name="requirements" rows="3" maxlength="2000" placeholder="例如：我喜欢温和、简短的回答，帮我设定一个日常生活助手。" required></textarea></label><button>生成草稿</button></form><p class="muted">AI 草稿放入下方编辑框，点击保存后生效。微信里也可以直接让助手修改自己的人物设定。</p><form id="agents-form"><label>人物设定<textarea name="content" id="agents-content" rows="12" maxlength="8000" placeholder="例如：称呼我为 Lucy，默认用中文，回答简洁。"></textarea></label><button>保存人物设定</button></form></section>
+    <section><h2>修改登录密码</h2><form id="password-form"><label>当前登录密码<input name="oldPassword" type="password" autocomplete="current-password" required></label><label>新登录密码<input name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label><button>修改并重新登录</button></form></section>
+  </div>
+  <footer>数据按账号隔离，管理员可查看运行记录以排查问题。</footer>
+</main></body></html>

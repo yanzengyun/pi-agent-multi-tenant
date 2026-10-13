@@ -29,13 +29,21 @@ export class RunQueue extends EventEmitter {
       const emit = (kind, payload) => {
         if (eventCount++ < 500) this.store.trace(run.id, kind, payload);
       };
+      const personaDraft = this.store.runMode(run.id) === 'persona_draft';
       const context = {
-        ...this.contextFactory(run.user_id),
+        personaDraft,
+        ...(personaDraft ? {} : this.contextFactory(run.user_id)),
         userId: run.user_id, conversation: this.store.conversation(run.user_id, run.conversation_id),
         directory: this.store.directory, signal: controller.signal, emit,
         history: this.store.messages(run.user_id, run.conversation_id),
-        memory: () => this.store.memory(run.user_id),
+        memory: () => personaDraft ? '' : this.store.memory(run.user_id),
+        agentProfile: () => this.store.agentProfile(run.user_id),
+        writeAgentProfile: text => {
+          if (personaDraft) throw new Error('Draft cannot change settings');
+          this.store.setAgentProfile(run.user_id, text);
+        },
         writeMemory: text => {
+          if (personaDraft) throw new Error('Draft cannot change memory');
           if (typeof text !== 'string' || text.length > 8000) throw new Error('Memory is too large');
           this.store.writeMemory(run.user_id, text);
         },
@@ -43,7 +51,7 @@ export class RunQueue extends EventEmitter {
       };
       try {
         emit('prompt', { mode: this.engine.mode || 'mock',
-          system: systemPrompt(context.memory()), input: run.prompt });
+          system: systemPrompt(context.memory(), context.agentProfile()), input: run.prompt });
         this.store.message(run.user_id, run.conversation_id, 'user', run.prompt);
         const response = await this.engine.run(context, run.prompt);
         if (controller.signal.aborted) throw new Error('Run aborted');

@@ -35,7 +35,17 @@ async function fixture(t) {
         if (state.loseCreateResponse) { state.loseCreateResponse = false; return reply(502, {}); }
         return reply(200, { id });
       }
-      if (resource.startsWith('spaces/')) return reply(200, state.spaces[resource.slice(7)]);
+      if (resource.startsWith('spaces/')) {
+        if (req.method === 'PATCH') {
+          Object.assign(state.spaces[resource.slice(7)], json);
+          if (state.losePatchResponse) { state.losePatchResponse = false; return reply(502, {}); }
+        }
+        return reply(200, state.spaces[resource.slice(7)]);
+      }
+      const password = resource.match(/^users\/([^/]+)\/password$/);
+      if (password) { state.users[password[1]].password = json.password; return reply(200, { status: 'ok' }); }
+      const account = resource.match(/^users\/([^/]+)$/);
+      if (account && req.method === 'DELETE') { delete state.users[account[1]]; return reply(200, { status: 'ok' }); }
       return reply(404, {});
     }
     const note = path.match(/^(\/users\/[^/]+)\/\.fs\/(.+)$/);
@@ -109,4 +119,48 @@ test('note names cannot escape the assigned space or address privileged endpoint
     assert.throws(() => notePath(page), /invalid_note_path/);
   }
   assert.equal(notePath('日记/今天'), '%E6%97%A5%E8%AE%B0/%E4%BB%8A%E5%A4%A9.md');
+});
+
+test('users can rename human note accounts without replacing agent tokens or retaining their password', async t => {
+  const { store, sb, state } = await fixture(t), alice = store.createUser('alice', 'fake');
+  await sb.provision(alice); await sb.file(alice.id, 'keep', { method: 'PUT', content: 'FAKE_PRESERVED' });
+  const before = store.integration(alice.id, 'silverbullet').state;
+  const result = await sb.setHumanLogin(alice, { username: 'alice_custom', password: 'chosen-fake-password' });
+  const after = store.integration(alice.id, 'silverbullet').state;
+  assert.equal(result.username, 'alice_custom'); assert.equal(after.spaceId, before.spaceId); assert.equal(after.token, before.token);
+  assert.equal(after.humanPassword, null); assert.equal(sb.loginDetails(alice.id).passwordManagedByUser, true);
+  assert.ok(!JSON.stringify(after).includes('chosen-fake-password')); assert.equal(state.minted, 1);
+  assert.equal(state.users.alice_custom.admin, false); assert.equal(state.users[before.humanUsername], undefined);
+  assert.deepEqual(Object.keys(state.spaces[before.spaceId].members).sort(), ['alice_custom', before.agentUsername].sort());
+  assert.equal((await sb.file(alice.id, 'keep')).content, 'FAKE_PRESERVED');
+  await sb.setHumanLogin(alice, { username: 'alice_custom', password: 'changed-fake-password' });
+  assert.equal(state.users.alice_custom.password, 'changed-fake-password');
+});
+
+test('note login changes reject another user account and resume a lost membership response', async t => {
+  const { store, sb, state } = await fixture(t), alice = store.createUser('alice', 'fake'), bob = store.createUser('bob', 'fake');
+  await sb.provision(alice); await sb.provision(bob);
+  const b = store.integration(bob.id, 'silverbullet').state;
+  await assert.rejects(sb.setHumanLogin(alice, { username: b.humanUsername, password: 'fake-password-12' }), /sb_username_conflict/);
+  state.losePatchResponse = true;
+  await assert.rejects(sb.setHumanLogin(alice, { username: 'alice_custom', password: 'fake-password-12' }), /sb_admin_request_failed/);
+  await sb.setHumanLogin(alice, { username: 'alice_custom', password: 'fake-password-12' });
+  assert.equal(store.integration(alice.id, 'silverbullet').state.humanUsername, 'alice_custom'); assert.equal(state.minted, 2);
+  assert.equal(store.integration(bob.id, 'silverbullet').state.humanUsername, b.humanUsername);
+});
+
+test('internal admin requests preserve the public Host required by native primary-origin auth', async t => {
+  const seen = [];
+  const server = createServer(async (req, res) => {
+    for await (const _ of req) {}
+    seen.push({host:req.headers.host, proto:req.headers['x-forwarded-proto']});
+    res.setHeader('Content-Type','application/json');
+    if (req.url.endsWith('/login')) {res.setHeader('Set-Cookie','auth_public=fake; HttpOnly');res.end('{"status":"ok"}');}
+    else {assert.equal(req.headers.cookie,'auth_public=fake');res.end('{"ok":true}');}
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const sb = new SilverBullet(null,{baseUrl:'http://127.0.0.1:'+server.address().port,publicUrl:'https://notes.example.test:32651',username:'fake',password:'fake-password'});
+  assert.deepEqual(await sb.admin('users'),{ok:true});
+  assert.deepEqual(seen,[{host:'notes.example.test:32651',proto:'https'},{host:'notes.example.test:32651',proto:'https'}]);
 });

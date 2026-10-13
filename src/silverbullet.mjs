@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 
 export function notePath(page) {
   if (typeof page !== 'string' || page.length > 120 || !page.trim() || /[\\%?#\x00-\x1f]/.test(page) ||
@@ -9,16 +11,41 @@ export function notePath(page) {
 
 export class SilverBullet {
   constructor(store, config) {
-    this.store = store; this.config = config; this.cookie = null; this.loginWork = null; this.provisions = new Map();
+    this.store = store; this.config = config; this.cookie = null; this.loginWork = null; this.provisions = new Map(); this.loginChanges = new Map();
     const url = new URL(config.baseUrl);
     if (url.username || url.password || !['http:', 'https:'].includes(url.protocol)) throw new Error('invalid_sb_url');
     this.base = config.baseUrl.replace(/\/$/, '');
+    // Connect over loopback while presenting the configured public origin to native auth.
+    const origin = new URL(config.publicUrl || config.baseUrl);
+    this.originHeaders = { Host: origin.host, 'X-Forwarded-Proto': origin.protocol.slice(0, -1) };
+  }
+  // Node fetch replaces Host. Native dashboard auth requires the public Host even over loopback.
+  adminFetch(path, { method, headers, body }) {
+    return new Promise((resolve, reject) => {
+      const url = new URL(this.base + path), request = url.protocol === 'https:' ? httpsRequest : httpRequest;
+      const req = request(url, { method, headers }, response => {
+        const chunks = []; let size = 0;
+        response.on('data', chunk => {
+          size += chunk.length;
+          if (size > 2_000_000) req.destroy(new Error('sb_response_too_large'));
+          else chunks.push(chunk);
+        });
+        response.on('error', reject);
+        response.on('end', () => {
+          const resultHeaders = new Headers();
+          for (let i = 0; i < response.rawHeaders.length; i += 2) resultHeaders.append(response.rawHeaders[i], response.rawHeaders[i + 1]);
+          resolve(new Response(Buffer.concat(chunks), { status: response.statusCode, headers: resultHeaders }));
+        });
+      });
+      req.setTimeout(20000, () => req.destroy(new Error('sb_request_timeout')));
+      req.on('error', reject); req.end(body);
+    });
   }
   async login() {
     if (this.loginWork) return this.loginWork;
     this.loginWork = (async () => {
-      const response = await fetch(this.base + '/.dashboard/api/login', { method: 'POST', redirect: 'error',
-        signal: AbortSignal.timeout(15000), headers: { 'Content-Type': 'application/json' },
+      const response = await this.adminFetch('/.dashboard/api/login', { method: 'POST', redirect: 'error',
+        signal: AbortSignal.timeout(15000), headers: { ...this.originHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: this.config.username, password: this.config.password }) });
       const data = await response.json();
       if (!response.ok || data.status !== 'ok') throw new Error('sb_admin_login_failed');
@@ -30,8 +57,8 @@ export class SilverBullet {
   async admin(path, method = 'GET', data) {
     if (!this.cookie) await this.login();
     for (let attempt = 0; attempt < 2; attempt++) {
-      const response = await fetch(this.base + '/.dashboard/api/admin/' + path, { method, redirect: 'error',
-        signal: AbortSignal.timeout(20000), headers: { Cookie: this.cookie, 'Content-Type': 'application/json' },
+      const response = await this.adminFetch('/.dashboard/api/admin/' + path, { method, redirect: 'error',
+        signal: AbortSignal.timeout(20000), headers: { ...this.originHeaders, Cookie: this.cookie, 'Content-Type': 'application/json' },
         body: data === undefined ? undefined : JSON.stringify(data) });
       if (response.status === 401 && attempt === 0) { this.cookie = null; await this.login(); continue; }
       if (!response.ok) throw Object.assign(new Error('sb_admin_request_failed'), { status: response.status });
@@ -41,6 +68,7 @@ export class SilverBullet {
   view(userId) {
     const item = this.store.integration(userId, 'silverbullet');
     return { status: item?.status || 'not_provisioned', ...(item?.status === 'ready' ? {
+      passwordUnified: !!item.state.passwordUnified,
       url: (this.config.publicUrl || this.base).replace(/\/$/, '') + item.state.prefix + '/', username: item.state.humanUsername } : {}) };
   }
   async provision(user) {
@@ -95,7 +123,46 @@ export class SilverBullet {
   loginDetails(userId) {
     const item = this.store.integration(userId, 'silverbullet');
     if (item?.status !== 'ready') throw new Error('sb_not_ready');
-    return { ...this.view(userId), password: item.state.humanPassword };
+    return { ...this.view(userId), password: item.state.humanPassword, passwordManagedByUser: !!item.state.passwordManagedByUser };
+  }
+  async setUnifiedLogin(user, password, username) {
+    const previous = this.store.integration(user.id, 'silverbullet')?.state;
+    await this.setHumanLogin(user, { username: username || (previous?.passwordManagedByUser ? previous.humanUsername : user.username), password });
+    const item = this.store.integration(user.id, 'silverbullet');
+    this.store.setIntegration(user.id, 'silverbullet', 'ready', { ...item.state, passwordUnified: true });
+    return this.view(user.id);
+  }
+  async setHumanLogin(user, { username, password }) {
+    if (typeof username !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(username) || typeof password !== 'string' || password.length < 12 || password.length > 256) throw new Error('invalid_sb_credentials');
+    if (this.loginChanges.has(user.id)) throw new Error('sb_busy');
+    const work = this.changeHumanLogin(user, username, password).finally(() => this.loginChanges.delete(user.id));
+    this.loginChanges.set(user.id, work); return work;
+  }
+  async changeHumanLogin(user, username, password) {
+    await this.provision(user);
+    const state = this.store.integration(user.id, 'silverbullet').state, accounts = await this.admin('users');
+    const marker = `Pi tenant ${user.id} human`, target = accounts[username];
+    if (username === state.agentUsername || (target && (target.admin || target.fullName !== marker))) throw new Error('sb_username_conflict');
+    const current = await this.admin('spaces/' + state.spaceId);
+    const names = Object.keys(current.members || {}).sort().join();
+    if (current.access !== 'none' || current.folder !== state.folder || current.binding?.prefix !== state.prefix || current.shell?.enabled !== false ||
+        ![[state.humanUsername,state.agentUsername], [username,state.agentUsername]].some(pair => pair.sort().join() === names) ||
+        Object.values(current.members).some(m => m.role !== 'write' || m.runtimeApi !== false)) throw new Error('sb_space_permissions_mismatch');
+    if (!target) await this.admin('users', 'POST', { username, password, admin: false, fullName: marker, email: '', loginMethod: 'local' });
+    else await this.admin('users/' + username + '/password', 'POST', { password });
+    if (username !== state.humanUsername) {
+      const members = { [username]: { role: 'write', runtimeApi: false }, [state.agentUsername]: { role: 'write', runtimeApi: false } };
+      await this.admin('spaces/' + state.spaceId, 'PATCH', { members });
+      const updated = await this.admin('spaces/' + state.spaceId);
+      if (Object.keys(updated.members || {}).sort().join() !== Object.keys(members).sort().join() ||
+          Object.values(updated.members).some(m => m.role !== 'write' || m.runtimeApi !== false)) throw new Error('sb_space_permissions_mismatch');
+    }
+    const former = state.humanUsername;
+    this.store.setIntegration(user.id, 'silverbullet', 'ready', { ...state, humanUsername: username, humanPassword: null, passwordManagedByUser: true, passwordUnified: false });
+    if (former !== username && accounts[former]?.fullName === marker && accounts[former]?.admin === false) {
+      await this.admin('users/' + former, 'DELETE').catch(() => {});
+    }
+    return this.view(user.id);
   }
   async file(userId, page, { method = 'GET', content, etag, signal } = {}) {
     const item = this.store.integration(userId, 'silverbullet');
@@ -120,5 +187,5 @@ export class SilverBullet {
     return { read: (page, signal) => this.file(userId, page, { signal }),
       write: (page, content, etag, signal) => this.file(userId, page, { method: 'PUT', content, etag, signal }) };
   }
-  async close() { await Promise.allSettled([...this.provisions.values()]); }
+  async close() { await Promise.allSettled([...this.provisions.values(), ...this.loginChanges.values()]); }
 }

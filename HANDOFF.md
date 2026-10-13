@@ -9,7 +9,26 @@
 - 用户已要求开始开发，并指定GitHub仓库 https://github.com/yanzengyun/pi-agent-multi-tenant.git 上传代码。
 - 当前个人助手必须保持可用。没有授权把真实用户状态迁入开发环境；测试仅用虚构用户。
 
-## 最新进度：独立多用户服务已上线（2026-10-13）
+## 当前补充：笔记认证修复与人物设定AI（2026-10-13）
+
+- 真实根因：SB原生登录自动请求根路径/.auth/central/public，误入trace Basic网关触发浏览器验证；同时primaryUrl错误为loopback。Nginx专用/.auth/central/免Basic转发SB，原生SB自己认证；primaryUrl热更新为https://123.56.157.198:32651。Node fetch会替换Host，内部dashboard请求改用标准http.request保留公网Host及HTTPS代理头。后台/个人trace保持保护，不能为修复用户登录移除全站保护。
+- 永久用户主页/assistant/account；invite7天只用于注册/激活。页面称人物设定，网页AI生成草稿只允许persona_read，run_modes持久化只读模式，未保存不覆盖设定；微信persona_read/write固定当前UUID，明确请求才保存。
+- 网页与笔记密码统一：新注册同步SB；笔记同步异常返回notesPending，用户验证主页密码重试；改密先同步SB成功再更新主页hash。现有Lucy密码不自动重置，验证主页密码才统一。凭据更新按用户互斥，防并发改密造成不一致。
+- 已验证37项测试、真实模型persona工具；浏览器测公共认证无WWW-Authenticate挑战且读到自身index.md。浏览器已验证AI草稿只读且不保存、统一改密后重新登录笔记，JS错误0，结果见test/live-readiness.json。
+- 当前更新备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261013-215411，保持原用户/绑定及个人Pi PID不变。生产代码与Git目录分开，交接需同步两处。
+
+## 最新进度：邀请注册与自助配置已上线（2026-10-13）
+
+- 用户要求分享链接让用户受邀注册、设置笔记账号密码、页面管理AGENTS，已实现并上线。管理员原/assistant/不变，用户页/assistant/account，无需管理员网关口令。Nginx仅豁免account/join、必要静态文件、登录/注册及account自助API；管理员接口及个人trace仍受原网关保护。
+- 一次性邀请7天有效、可撤销，数据库只存hash；分享token放URL fragment，POST消费。注册强制role=user，事务防重复消费。管理员可邀请已有账号激活，保留原UUID/记忆/微信，设置网页登录密码并撤销旧会话；新激活邀请和改密码会使旧目标邀请失效。
+- 用户可选择笔记用户名/密码，保留Space和Agent token，改名更新人类成员ACL，删除旧人类账号；冲突账号不覆盖。自设密码应用DBhumanPassword=null，不返回管理员。主页与笔记密码统一，新注册同步，改密同步，旧用户必须主动验证当前主页密码再统一；不在普通登录时覆写Lucy原笔记密码。
+- 每用户AGENTS由agent_profiles表保存，镜像到UUID/workspace/AGENTS.md，固定服务端路径、文件0600；数据库为注入来源，下一次模型请求读取该用户配置，不启用全局AGENTS发现或宿主机工具。仍属应用隔离、共享Linux admin，未宣称OS沙箱。
+- 37项本地自动测试通过；浏览器实测受邀注册、一次性拒绝、AGENTS保存、自选笔记凭据登录、密码不留明文、自己的扫码PNG、网页改密码和旧会话撤销；普通用户访问管理员接口和个人trace401，JS错误0。真实SDK上下文验证AGENTS注入且工具白名单不扩张。
+- 更新前私有备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261013-210737。update-live.py检查队列空闲、备份DB/源码/路由，健康失败恢复旧代码和路由、不覆盖数据库；已有用户/绑定摘要与个人PID2985确认未变。验收账号已清理，未改真实用户密码/偏好/笔记。
+- 新代码/scripts：verify-invites-ui.mjs；浏览器运行python3 scripts/verify-ui-container.py verify-invites-ui.mjs。临时依赖playwright-core1.51.1位于/tmp/pi-backend-browser，使用缓存公开Playwright容器；不要给页面加unsafe-eval来适配测试。
+- 真实账户扫码、运行完成和微信接口发送确认已只读验证，未读/导出聊天正文。此前“真实收发待确认”是历史状态。
+
+## 历史：独立多用户服务已上线（2026-10-13）
 
 - 用户要求继续开发到可直接使用并提供管理后台，已部署独立正式实例。地址https://123.56.157.198:32651/assistant/，网关仍使用原zengyuny账号；后台admin密码私有保存本机alibaba_host/config/multi-tenant-login.json、服务器/home/admin/.config/pi-agent-multi-tenant/login.json，不输出或写Git。
 - 代码/home/admin/pi-agent-multi-tenant-live，状态/home/admin/.local/share/pi-agent-multi-tenant/data，私有配置/home/admin/.config/pi-agent-multi-tenant。pi-multi-tenant.service开机enabled、异常重启，监听32215，仅loopback；MemoryHigh256MiB/Max384MiB/CPUQuota50%。旧开发实例仍停止。
