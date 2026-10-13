@@ -41,3 +41,5 @@
 - GitHub仓库可公开读取，main初始提交dbda1b2保留。首次push失败：IDE askpass socket失效；排除IDE后仍无GitHub用户名凭据，现有项目credential store未返回GitHub认证。没有强推，也没有关闭TLS校验。
 - 已向用户询问配置GitHub写入认证方式：只授权指定仓库Contents读写的私有token文件，或网页登录授权。等待用户提供认证；拿到后继续push与远端提交核验，不能把token写日志/回复/Git。
 - 本地Node24与服务器Node22环境的7项集成测试均通过。独立真实Pi SDK测试通过；开发服务约160MiB RSS，仅回环32214。
+
+- 用户随后提供私有token文件，已将权限收紧为0600；只通过限定仓库的Git credential helper传递，不输出token。GitHub认证识别账号yanzengyun，但push返回403 Permission denied，当前token缺少此仓库可用写权限。已请用户确认token仓库选择和Contents=Read and write，保存/必要时更新文件后重试。不能误报已上传。
