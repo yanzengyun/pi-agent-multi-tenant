@@ -40,6 +40,12 @@ export class PiEngine {
     const Type = this.Type;
     const result = text => ({ content: [{ type: 'text', text }], details: {} });
     const customTools = [
+      { name: 'time_now', label: 'Current Time', description: '查询服务器当前日期和时间，返回 UTC 和北京时间（Asia/Shanghai）。无需 cmd/bash。',
+        parameters: Type.Object({}), async execute() {
+          const now = new Date();
+          return result(JSON.stringify({ utc: now.toISOString(), timezone: 'Asia/Shanghai',
+            local: new Date(now.getTime() + 8 * 3600000).toISOString().replace('Z', '+08:00') }));
+        } },
       { name: 'memory_read', label: 'Memory Read', description: 'Read only the authenticated user’s persistent memory.',
         parameters: Type.Object({}), async execute() { return result(ctx.memory()); } },
       { name: 'memory_write', label: 'Memory Write', description: 'Replace the authenticated user’s memory; preserve existing relevant facts.',
@@ -47,9 +53,9 @@ export class PiEngine {
         async execute(_id, { content }) { ctx.writeMemory(content); return result('Memory saved'); } },
     ];
     customTools.push(
-      { name: 'persona_read', label: 'Read Persona', description: 'Read only this user’s 人物设定 (assistant personality and preferences).',
+      { name: 'persona_read', label: 'Read Persona', description: '读取当前用户自己的人物设定（agent.md / AGENTS.md）。这是专用配置工具，不需要文件或命令工具。',
         parameters: Type.Object({}), async execute() { return result(ctx.agentProfile()); } },
-      { name: 'persona_write', label: 'Save Persona', description: 'Only when the user explicitly requests changing 人物设定. Read the existing setting first; preserve unrelated preferences. Cannot change permissions.',
+      { name: 'persona_write', label: 'Save Persona', description: '用户明确要求修改自己的人物设定、agent.md 或 AGENTS.md 时保存。先用 persona_read 读取，保留未要求修改的偏好。只写当前用户的配置和 AGENTS.md 镜像，不能改变工具权限。',
         parameters: Type.Object({ content: Type.String({ maxLength: 8000 }) }),
         async execute(_id, { content }) { ctx.writeAgentProfile(content); return result('人物设定已保存，后续对话生效。'); } },
     );

@@ -9,6 +9,13 @@
 - 用户已要求开始开发，并指定GitHub仓库 https://github.com/yanzengyun/pi-agent-multi-tenant.git 上传代码。
 - 当前个人助手必须保持可用。没有授权把真实用户状态迁入开发环境；测试仅用虚构用户。
 
+## 待上线修复：查询时间与 agent.md 自助修改（2026-10-13）
+
+- 用户反馈Lucy无cmd，无法查时间或改自己的agent.md。通用cmd/bash原本不开放；此阶段共用Linux admin，不能直接开宿主机命令。生产Lucy实际trace尚未读取，不能断言是缺工具还是模型拒绝。
+- 本地增加零参数time_now，返回UTC及北京时间；系统提示和persona工具描述明确agent.md/AGENTS.md是自己的人物设定，通过persona_read/write保存，不依赖命令工具。旧会话拒绝不应覆盖当前工具清单。
+- 新增test/pi-tools.test.mjs，通过SDK适配器与真实队列/Store验证查时间、自己配置保存/镜像、跨用户不能修改以及草稿只读，3项通过。测试使用模拟SDK模型，不代表生产Lucy或真实模型验收。
+- 当前会话权限禁止网络socket，SSH报Operation not permitted；此修改尚未部署或推送，生产仍是6f5001f。全量HTTP测试受同一限制无法监听端口。verify-live.mjs补充自然语言agent.md与时间请求验收，待网络恢复后执行，不应把待验收写为已通过。
+
 ## 当前补充：笔记认证修复与人物设定AI（2026-10-13）
 
 - 真实根因：SB原生登录自动请求根路径/.auth/central/public，误入trace Basic网关触发浏览器验证；同时primaryUrl错误为loopback。Nginx专用/.auth/central/免Basic转发SB，原生SB自己认证；primaryUrl热更新为https://123.56.157.198:32651。Node fetch会替换Host，内部dashboard请求改用标准http.request保留公网Host及HTTPS代理头。后台/个人trace保持保护，不能为修复用户登录移除全站保护。

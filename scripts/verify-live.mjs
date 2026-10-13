@@ -39,7 +39,7 @@ try {
     !e.payload.activeTools.some(tool => ['bash','read','write','edit'].includes(tool))));
   report.real_model_and_memory_tool = true;
   report.real_agent_preferences_and_tool_boundary = true;
-  const persona = (await api(`/api/conversations/${c.id}/runs`, token, 'POST', { prompt: '这是测试账号明确授权修改自己的人物设定：请先调用persona_read，再调用persona_write，把人物设定完整保存为 FAKE_PERSONA_WRITE_OK。' })).data;
+  const persona = (await api(`/api/conversations/${c.id}/runs`, token, 'POST', { prompt: '请修改你自己的agent.md，把人物设定完整保存为 FAKE_PERSONA_WRITE_OK。这是我明确授权的测试修改，请实际保存。' })).data;
   let personaResult;
   for (let i=0;i<130;i++) {
     personaResult=(await api('/api/runs/'+persona.id,token)).data;
@@ -47,7 +47,20 @@ try {
     await new Promise(r=>setTimeout(r,1000));
   }
   assert.equal(personaResult.status,'completed'); assert.match(probe.agentProfile(auth.data.user.id),/FAKE_PERSONA_WRITE_OK/);
+  const personaEvents = (await api(`/api/runs/${persona.id}/trace`, token)).data.events;
+  for (const name of ['persona_read','persona_write']) assert.ok(personaEvents.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName===name));
   report.real_persona_tools=true;
+  const timeRun = (await api(`/api/conversations/${c.id}/runs`, token, 'POST', {prompt:'请核对现在的北京时间，回复当前日期和时间。'})).data;
+  let timeResult;
+  for (let i=0;i<130;i++) {
+    timeResult=(await api('/api/runs/'+timeRun.id,token)).data;
+    if (!['queued','running'].includes(timeResult.status)) break;
+    await new Promise(r=>setTimeout(r,1000));
+  }
+  assert.equal(timeResult.status,'completed');
+  const timeEvents=(await api(`/api/runs/${timeRun.id}/trace`,token)).data.events;
+  assert.ok(timeEvents.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName==='time_now'));
+  report.real_time_tool=true;
 } finally {
   probe.setAgentProfile(auth.data.user.id, oldProfile); probe.close();
   await api('/api/memory', token, 'PUT', { content: oldMemory }); await api('/api/logout', token, 'POST', {});
