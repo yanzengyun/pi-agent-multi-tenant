@@ -36,7 +36,7 @@ const app = await makeServer({ store, engine, adminPassword: process.env.ASSISTA
   basePath: process.env.ASSISTANT_BASE_PATH || '',
   wechatClient: process.env.ASSISTANT_WECHAT === 'on' ? new ILinkClient() : undefined,
   wechatOptions: wechatProtection, silverbullet,
-  speech: process.env.ASSISTANT_TTS === 'on' ? new Speech(process.env.MINIMAX_CN_API_KEY) : undefined,
+  speech: process.env.ASSISTANT_TTS === 'on' ? new Speech(process.env.MINIMAX_CN_API_KEY, { voiceId: process.env.ASSISTANT_TTS_VOICE }) : undefined,
   sandbox: process.env.ASSISTANT_SANDBOX_SOCKET ? new Sandbox(process.env.ASSISTANT_SANDBOX_SOCKET) : undefined });
 app.server.listen(Number(process.env.ASSISTANT_PORT || 32214), host, () => {
   console.log(JSON.stringify({ status: 'listening', host, port: app.server.address().port, engine: mode }));

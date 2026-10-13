@@ -10,6 +10,7 @@ test('TTS uses the existing key, limits text, returns MP3 and exposes no credent
     assert.equal(options.headers.Authorization, 'Bearer fake-secret');
     const request = JSON.parse(options.body);
     assert.equal(request.audio_setting.format, 'mp3');
+    assert.equal(request.voice_setting.voice_id, 'female-tianmei');
     assert.equal(request.text, '你好');
     return new Response(JSON.stringify({ base_resp: { status_code: 0 }, data: { audio: Buffer.from('ID3fake-mp3').toString('hex') }, extra_info: { audio_length: 1000 } }));
   } });

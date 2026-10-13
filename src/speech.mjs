@@ -1,5 +1,5 @@
 export class Speech {
-  constructor(apiKey, { fetcher = fetch } = {}) { this.apiKey = apiKey; this.fetcher = fetcher; }
+  constructor(apiKey, { fetcher = fetch, voiceId = 'female-tianmei' } = {}) { this.apiKey = apiKey; this.fetcher = fetcher; this.voiceId = voiceId; }
   async synthesize(text, signal) {
     if (typeof text !== 'string' || !text.trim() || Array.from(text).length > 200) throw new Error('speech_text_invalid');
     const response = await this.fetcher('https://api.minimax.cn/v1/t2a_v2', {
@@ -7,7 +7,7 @@ export class Speech {
       signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(30000)]),
       headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'speech-2.8-turbo', text, stream: false, output_format: 'hex',
-        voice_setting: { voice_id: 'male-qn-qingse', speed: 1, vol: 1, pitch: 0 },
+        voice_setting: { voice_id: this.voiceId, speed: 1, vol: 1, pitch: 0 },
         audio_setting: { sample_rate: 24000, format: 'mp3', bitrate: 64000, channel: 1 } }),
     });
     if (!response.ok) throw new Error('speech_http_failed');

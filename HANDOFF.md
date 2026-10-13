@@ -9,6 +9,13 @@
 - 用户已要求开始开发，并指定GitHub仓库 https://github.com/yanzengyun/pi-agent-multi-tenant.git 上传代码。
 - 当前个人助手必须保持可用。没有授权把真实用户状态迁入开发环境；测试仅用虚构用户。
 
+## 女声与主账号接入（2026-10-14）
+
+- 用户确认Lucy已收到MP3，但需要下载，要求继续查原生气泡、改女声、原主账号上线。默认音色改为官方female-tianmei（甜美女性），ASSISTANT_TTS_VOICE可配置；保持现有key，默认文字与按需音频。
+- 原生气泡：核对最新官方协议、候选PR9与issue215，2026-09-02实测包含MP3直接VOICE、SILK24kHz/8kHz及不同playtime均API成功但不显示。尚无可验证的参数修复，原生产继续发送用户已验证收到的MP3附件；不能承诺免下载原生气泡。
+- 女声已上线，多用户备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261014-014115，原个人Pi已空闲/reload上线voice_reply，注册/启用/女声/key状态均通过，原进程与任务保持。
+- 原个人Pi扩展源码位于相邻alibaba_host/pi-agent/voice-reply，独立主账号模块复用本项目语音/微信发送代码，自己的凭据/上下文，固定收件人；不迁移到多用户库。部署/备份/reload与原进程保持检查由该项目install.py完成。
+
 ## 语音气泡不可见修复（2026-10-14）
 
 - 用户确认Lucy收不到。Lucy在北京时间01:21的真实运行voice_reply成功，14.26秒，出站队列记录接口接受，但客户端不可见。不能把sent/API成功当成端侧收到了。腾讯仓库issue215同样实测VOICE上传+VOICE消息无显示，包括silk-wasm/24kHz；没有官方权限或字段根因结论。https://github.com/Tencent/openclaw-weixin/issues/215 。

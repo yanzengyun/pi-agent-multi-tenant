@@ -42,7 +42,7 @@ try {
   const events = store.traces(user.id, run.id);
   assert.ok(events.some(event => event.kind === 'sdk_event' && event.payload.type === 'tool_execution_start' && event.payload.toolName === 'voice_reply'));
   assert.equal(store.voice(user.id, run.id), undefined);
-  const report = { real_model_voice_tool: true, real_tts_existing_key: true, mp3_header_verified: true,
+  const report = { real_model_voice_tool: true, real_tts_existing_key: true, voice_id: speech.voiceId, mp3_header_verified: true,
     duration_ms: voice.duration, audio_bytes: voice.audio.length, text_and_voice_outbox: true, live_messages_sent: 0 };
   if (process.argv.includes('--verify-upload')) {
     const db = new DatabaseSync('/home/admin/.local/share/pi-agent-multi-tenant/data/assistant.sqlite', { readOnly: true });

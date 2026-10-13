@@ -244,7 +244,7 @@ sudo curl --unix-socket /run/pi-sandbox/runner.sock -H 'Content-Type: applicatio
 
 ## 微信语音回复部署与验证
 
-- 接口：MiniMax `https://api.minimax.cn/v1/t2a_v2`，`speech-2.8-turbo`，默认音色`male-qn-qingse`；直接生成MP3、24kHz/64kbps，微信上传类型3（FILE）、消息类型4（FILE）；附件名voice-reply.mp3。原生VOICE气泡路径已停用，因为API成功但实际客户端未显示。接口文档：https://platform.minimax.cn/docs/api-reference/speech-t2a-http 。
+- 接口：MiniMax `https://api.minimax.cn/v1/t2a_v2`，`speech-2.8-turbo`，默认音色`female-tianmei`（甜美女性）；直接生成MP3、24kHz/64kbps，微信上传类型3（FILE）、消息类型4（FILE）；附件名voice-reply.mp3。原生VOICE气泡路径已停用，因为API成功但实际客户端未显示。接口文档：https://platform.minimax.cn/docs/api-reference/speech-t2a-http 。
 - `/home/admin/.config/pi-agent-multi-tenant/env`增加`ASSISTANT_TTS=on`后重启多用户服务。密钥继续由原启动器从`/home/admin/.config/pi-agent/env`加载，不新建或复制密钥，不修改个人Pi进程。
 - 更新代码用`python3 scripts/update-live.py`，锁文件变化时安装独立后端依赖，SDK运行目录保持独立。新增SQLite表`wechat_voice`自动创建，无需手工迁移。待发送音频及CDN引用存于私有库，投递完成/取消后删除；需随数据库备份。音频失败可重试；文字成功后不因语音重试而重复发送，已上传的音频不会重复合成。网络响应丢失仍可能重复语音，稳定client_id不构成严格恰好一次保证。
 - `scripts/verify-speech-live.mjs`仅用独立临时库与虚构微信用户，调用真实模型/TTS并检查MP3格式、工具trace与文字+音频outbox；加`--verify-upload`用现有连接进行一次真实CDN上传，不发送真实微信聊天消息。启动前由admin加载原私有模型env。
@@ -252,3 +252,5 @@ sudo curl --unix-socket /run/pi-sandbox/runner.sock -H 'Content-Type: applicatio
 
 
 原生语音气泡限制：Lucy在2026-10-14的实测中voice_reply成功（14.26秒），接口接受但客户端没有显示。腾讯仓库同症状反馈：https://github.com/Tencent/openclaw-weixin/issues/215 ，官方文件发送实现：https://github.com/Tencent/openclaw-weixin/blob/main/src/messaging/send.ts 。尚无官方结论证明是账号权限、隐藏字段或其他服务端限制。现在使用MP3附件；trace记录`audio_api_accepted`并明确`clientPlaybackConfirmed=false`，接口接受不代表客户端收到/可播放。
+
+音色：默认女声female-tianmei。设置启动环境ASSISTANT_TTS_VOICE可替换为官方voice_id；重启服务后生效。原个人Pi的同名工具安装说明见相邻仓库alibaba_host/pi-agent/voice-reply/README.md。用户已确认Lucy收到MP3附件，微信会按文件处理，仍需下载/打开，不能承诺原生气泡。
