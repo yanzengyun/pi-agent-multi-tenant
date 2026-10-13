@@ -46,6 +46,40 @@ $('#wechat-dialog').addEventListener('cancel', event => { event.preventDefault()
 $('#sb-close').addEventListener('click', () => { $('#sb-dialog').close(); $('#sb-password').value = ''; });
 $('#sb-dialog').addEventListener('cancel', () => { $('#sb-password').value = ''; });
 $('#sb-reveal').addEventListener('click', () => { $('#sb-password').type = $('#sb-password').type === 'password' ? 'text' : 'password'; });
+let traceView = null;
+function clearTrace() {
+  traceView = null; $('#trace-runs').replaceChildren(); $('#trace-events').replaceChildren();
+}
+$('#trace-close').addEventListener('click', () => { $('#trace-dialog').close(); clearTrace(); });
+$('#trace-dialog').addEventListener('cancel', clearTrace);
+async function showTrace(user) {
+  const view = {}; traceView = view;
+  $('#trace-title').textContent = `运行记录 · ${user.username}`;
+  $('#trace-runs').textContent = '正在加载'; $('#trace-events').replaceChildren(); $('#trace-dialog').showModal();
+  try {
+    const result = await api(`/api/admin/users/${user.id}/runs`);
+    if (traceView !== view) return;
+    $('#trace-runs').replaceChildren();
+    if (!result.runs.length) $('#trace-runs').textContent = '还没有运行记录';
+    for (const run of result.runs) {
+      $('#trace-runs').append(action(`${new Date(run.created_at).toLocaleString()} · ${run.status} · ${run.preview}`, async () => {
+        const selection = {}; view.selection = selection;
+        const detail = await api(`/api/admin/users/${user.id}/runs/${run.id}/trace`);
+        if (traceView !== view || view.selection !== selection) return;
+        $('#trace-events').replaceChildren();
+        const summary = document.createElement('pre');
+        summary.textContent = JSON.stringify({ input: detail.run.prompt, status: detail.run.status,
+          response: detail.run.response, error: detail.run.error }, null, 2);
+        $('#trace-events').append(summary);
+        for (const event of detail.events) {
+          const item = document.createElement('details'), title = document.createElement('summary'), content = document.createElement('pre');
+          title.textContent = `${new Date(event.created_at).toLocaleTimeString()} · ${event.kind}`;
+          content.textContent = JSON.stringify(event.payload, null, 2); item.append(title, content); $('#trace-events').append(item);
+        }
+      }));
+    }
+  } catch (error) { if (traceView === view) $('#trace-runs').textContent = error.message; }
+}
 async function showConsole() {
   const me = await api('/api/me');
   if (me.role !== 'admin') throw new Error('只有管理员可以使用此管理台');
@@ -61,6 +95,7 @@ async function showConsole() {
     const info = document.createElement('div'); info.append(name, detail); row.append(info);
     if (user.role !== 'admin') {
       const controls = document.createElement('div'); controls.className = 'actions';
+      controls.append(action('运行记录', () => showTrace(user)));
       if (data.wechatEnabled) controls.append(user.wechat.status === 'not_bound'
         ? action('微信扫码', () => bindWechat(user))
         : action('解除绑定', async () => { if (confirm(`解除 ${user.username} 的微信连接？身份归属保留，重新扫码须使用原微信。`)) { await api(`/api/admin/users/${user.id}/wechat`, 'DELETE', {}); await showConsole(); } }));

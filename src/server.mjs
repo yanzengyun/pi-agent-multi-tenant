@@ -103,6 +103,15 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
           const user = store.createUser(username, await hashPassword(password));
           return reply(201, user);
         }
+        const adminRuns = path.match(/^\/api\/admin\/users\/([^/]+)\/runs(?:\/([^/]+)\/trace)?$/);
+        if (adminRuns && req.method === 'GET') {
+          const user = store.userById(adminRuns[1]);
+          if (!user || user.role !== 'user') throw new HttpError(404, 'not_found');
+          if (!adminRuns[2]) return reply(200, { runs: store.recentRuns(user.id) });
+          const run = store.run(user.id, adminRuns[2]);
+          if (!run) throw new HttpError(404, 'not_found');
+          return reply(200, { run, events: store.traces(user.id, run.id) });
+        }
         const integration = path.match(/^\/api\/admin\/users\/([^/]+)\/(wechat|silverbullet)(?:\/(login|credentials)(?:\/([^/]+))?)?$/);
         if (integration) {
           const user = store.userById(integration[1]);

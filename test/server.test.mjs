@@ -42,6 +42,42 @@ async function completed(api, token, id) {
   throw new Error('Run did not finish');
 }
 
+test('administrator traces show the selected user memory and reject foreign run IDs', async t => {
+  const { api, admin, create } = await fixture(t);
+  const alice = await create('alice'), bob = await create('bob');
+  await api('/api/memory', { token: alice.token, method: 'PUT', data: { content: 'TRACE_ALICE_PRIVATE' } });
+  const conversation = (await api('/api/conversations', { token: alice.token, method: 'POST', data: {} })).data;
+  const run = (await api(`/api/conversations/${conversation.id}/runs`, { token: alice.token,
+    method: 'POST', data: { prompt: 'recall' } })).data;
+  await completed(api, alice.token, run.id);
+  const route = `/api/admin/users/${alice.user.id}/runs`;
+  assert.equal((await api(route)).status, 401);
+  assert.equal((await api(route, { token: alice.token })).status, 403);
+  assert.equal((await api(`${route}/${run.id}/trace`, { token: bob.token })).status, 403);
+  assert.equal((await api(`/api/admin/users/${bob.user.id}/runs/${run.id}/trace`, { token: admin })).status, 404);
+  assert.equal((await api('/api/admin/users/unknown/runs', { token: admin })).status, 404);
+  const listing = await api(route, { token: admin });
+  assert.equal(listing.status, 200); assert.equal(listing.data.runs.length, 1);
+  assert.equal(listing.data.runs[0].preview, 'recall');
+  const detail = await api(`${route}/${run.id}/trace`, { token: admin });
+  assert.equal(detail.data.run.response, 'TRACE_ALICE_PRIVATE');
+  assert.ok(detail.data.events.some(event => event.kind === 'prompt' && event.payload.system.includes('TRACE_ALICE_PRIVATE')));
+  assert.ok(detail.data.events.some(event => event.kind === 'tool' && event.payload.name === 'memory_read'));
+  assert.deepEqual((await api(`/api/admin/users/${bob.user.id}/runs`, { token: admin })).data.runs, []);
+});
+
+test('administrator run lists are bounded, ordered and contain only the selected user', async t => {
+  const { api, admin, create, store } = await fixture(t);
+  const alice = await create('alice'), bob = await create('bob');
+  const a = store.createConversation(alice.user.id, 'fake'), b = store.createConversation(bob.user.id, 'fake');
+  for (let i = 0; i < 55; i++) store.createRun(alice.user.id, a.id, String(i).padStart(3, '0') + 'x'.repeat(200));
+  store.createRun(bob.user.id, b.id, 'BOB_PRIVATE');
+  const listing = (await api(`/api/admin/users/${alice.user.id}/runs`, { token: admin })).data.runs;
+  assert.equal(listing.length, 50); assert.ok(listing.every(run => run.preview.length === 120));
+  assert.match(listing[0].preview, /^054/); assert.match(listing.at(-1).preview, /^005/);
+  assert.ok(!JSON.stringify(listing).includes('BOB_PRIVATE'));
+});
+
 test('ordinary users cannot manage users; auth sessions are hashed and revocable', async t => {
   const { api, admin, create, store } = await fixture(t);
   const alice = await create('alice');

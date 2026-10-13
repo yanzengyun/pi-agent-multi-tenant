@@ -105,6 +105,10 @@ export class Store {
     return this.run(userId, id);
   }
   run(userId, id) { return this.db.prepare('SELECT * FROM runs WHERE id=? AND user_id=?').get(id, userId); }
+  recentRuns(userId) {
+    return this.db.prepare(`SELECT id,status,substr(prompt,1,120) AS preview,created_at FROM runs
+      WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 50`).all(userId);
+  }
   pending() { return this.db.prepare("SELECT * FROM runs WHERE status='queued' ORDER BY created_at,rowid").all(); }
   runStatus(id, status, response = null, error = null) {
     this.db.prepare('UPDATE runs SET status=?,response=?,error=? WHERE id=?').run(status, response, error, id);
