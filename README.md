@@ -2,7 +2,7 @@
 
 一键连接微信的多租户个人助手。目标是一个管理员控制台、一个 Pi SDK 后端、按用户隔离的数据，以及共用的 SilverBullet 等基础服务。
 
-**当前版本：开发版，尚未完成真实微信收发验收。** 第二阶段已上传 GitHub，新增管理员运行记录页面；新版尚未启动到服务器。服务器重启后个人助手已恢复，并配置自动恢复监控。当前开发验证在本地进行，个人助手保持独立运行。
+**当前版本：可扫码接入的独立服务，已部署。** 管理地址为 `https://123.56.157.198:32651/assistant/`，使用现有管理员密码网关，后台账号为 admin；后台密码保存在本机 `alibaba_host/config/multi-tenant-login.json` 和服务器 `/home/admin/.config/pi-agent-multi-tenant/login.json`，不进Git。管理员创建用户后让本人扫码，并先在微信发一条消息。真实二维码和模型调用已经验收，最终微信收发需真人扫码后确认。
 
 ## 已实现
 
@@ -21,12 +21,13 @@
 - 解绑保留微信身份归属，重新绑定必须是原微信用户，不能换人继承记忆。原个人助手身份可加入保护名单，不导入其微信token或聊天。
 - 自动创建 SilverBullet 人类账号、非管理员 Agent 账号、私有 Space 和受限 token；模型只获得当前用户的 `note_read`、`note_write` 工具。
 - 笔记写入使用 ETag 防止覆盖其他修改；管理员可显式查看人类登录信息，Agent token 不返回管理页面或模型。
+- 持久化的一次性／每日文本提醒，管理员页面和模型的 reminder_create/list/cancel 工具均限定当前用户。时间需包含时区，默认北京时间；每日按24小时重复，不调用模型生成提醒。
 
 ## 仍需实现
 
 1. 真实微信扫码、接收和回复验收，包括会话过期、重连及异常网络；目前只有模拟微信测试通过。
-2. 第二阶段服务器部署、重启验收与资源评估；SilverBullet 实际隔离已在本地独立容器验证。
-3. 持久化定时任务及用户消息投递，任务不依赖会话对象常驻。
+2. 多人容量及长时间运行验证，服务器资源上限已配置，不作为容量承诺。
+3. 定时模型复盘和复杂周期，目前只支持一次性／每日文本提醒。
 4. 受限健康/投资工具、历史关键词搜索、用户禁用、额度统计和限额；运行记录页面后续补刷新与筛选。
 5. 需要通用脚本时增加独立沙箱；上线前完成 HTTPS 入口、备份恢复和容量测试。
 
@@ -112,6 +113,8 @@ tenants/<服务端生成的UUID>/
 | `POST /api/admin/users/:id/silverbullet/credentials` | 管理员显式查看人类登录信息 |
 | `GET /api/admin/users/:id/runs` | 管理员查看指定用户最近50次运行 |
 | `GET /api/admin/users/:id/runs/:runId/trace` | 管理员查看指定用户运行详情，错配ID返回404 |
+| `GET/POST /api/admin/users/:id/reminders` | 管理员查看／添加对应用户提醒 |
+| `DELETE /api/admin/users/:id/reminders/:id` | 管理员取消对应用户提醒及尚未投递的提醒 |
 | `GET/PUT /api/notes/:encodedPage` | 当前用户的笔记，写入已有笔记需 ETag |
 
 Cookie供管理台使用，Bearer供集成/测试使用。用户权限不接受请求正文、URL参数或模型输出中的身份声明。每次查询与工具闭包都绑定认证用户。
@@ -131,6 +134,24 @@ Cookie供管理台使用，Bearer供集成/测试使用。用户权限不接受�
 
 管理台可经SSH隧道访问。上线前应配置 HTTPS、`ASSISTANT_SECURE_COOKIES=on` 和固定 `ASSISTANT_ORIGIN`；此开发入口不直接开放公网。
 
+## 当前上线部署
+
+`scripts/deploy-live.py` 部署到 `/home/admin/pi-agent-multi-tenant-live`，状态为 `/home/admin/.local/share/pi-agent-multi-tenant/data`，私有配置为 `/home/admin/.config/pi-agent-multi-tenant`。它与旧开发实例、个人Pi的状态分开。`pi-multi-tenant.service` 已启用开机启动，异常退出自动重启；MemoryHigh=256MiB、MemoryMax=384MiB、CPUQuota=50%，超限可能终止本后台，不会借此扩大个人助手权限。
+
+后台仅监听127.0.0.1:32215，`ASSISTANT_BASE_PATH=/assistant`、Secure Cookie、固定Origin均已启用。现有Nginx32651为 `/assistant/` 提供密码网关；个人trace仍在原根路径。新笔记容器 `silverbullet-multi-tenant` 监听127.0.0.1:32216，数据为 `/opt/pi-agent-multi-tenant-sb/data`，restart=unless-stopped，限制128MiB/0.25CPU。
+
+`/users/<uuid>/` 使用SilverBullet自身账号及Space权限，**不共享管理员网关口令**。笔记用户可用其人类账号登录自己的空间；后台和个人trace仍要求管理员网关认证。Agent token只用于服务器内部访问。两条路由位于 `/etc/nginx/pi-app-routes.d/pi-multi-tenant.conf`。
+
+重新部署会短暂停止本后台。脚本拒绝队列中有运行或等待任务的部署，先检查可用内存，恢复后再启动。不要同时启动开发实例导入正式状态，或重载个人Pi来更新本项目。部署失败可能需要人工恢复，当前脚本不是支持原子回滚的发布系统。
+
+```sh
+systemctl status pi-multi-tenant
+journalctl -u pi-multi-tenant --no-pager -n 30
+docker ps --filter name=silverbullet-multi-tenant
+```
+
+提醒到期时，如果微信未连接或用户还没发过消息，会保留为 waiting_for_wechat；有可用上下文后投递。完成状态表示已排入持久化发送队列，不代表微信已送达。离线期间错过多次每日提醒只补一条，不补发全部历史日期。微信接口拒绝旧上下文或token失效时可能需要用户再发消息或重新扫码；不保证任意时长的主动通知。
+
 ### 微信与 SilverBullet 配置
 
 设置 `ASSISTANT_WECHAT=on` 才会请求真实微信二维码。`ASSISTANT_WECHAT_PROTECTION` 指向私有JSON，格式为 `{"protectedBots":[],"protectedUsers":[]}`；把现有个人助手身份加入其中，测试时使用另一个微信账号。已有保护名单仍不能防止用户扫码本身在微信侧造成的登录变化，因此不要用生产微信做开发扫码实验。
@@ -147,12 +168,14 @@ Cookie供管理台使用，Bearer供集成/测试使用。用户权限不接受�
 
 ## 验证结果
 
-2026-10-13，23项自动测试通过，覆盖认证、权限、跨用户记忆/聊天/run/trace、Origin、请求体限制、串行队列、失败恢复、超时、扫码取消/过期/身份保护、发送者校验、投递重试、重启恢复及管理员trace权限。前端通过JS语法检查，尚未进行浏览器自动化验收。
+2026-10-13，自动测试覆盖认证、权限、跨用户记忆/聊天/run/trace、Origin、请求体限制、串行队列、失败恢复、超时、扫码取消/过期/身份保护、发送者校验、投递重试、重启恢复、管理员trace权限，以及提醒持久化、时区/日期校验、漏执行合并和最新用户上下文。
 
 独立服务器的真实 Pi SDK 测试已通过：两个虚构用户调用memory_read，返回各自测试代号，系统记忆注入正确；跨用户trace404；恢复SDK历史正确；官方搜索成功。生产个人助手的进程与配置未变，原trace HTTP200。报告见 `test/live-verification.json`，没有私人聊天正文或密钥。
 
 开发服务测试后的RSS约160MiB，是两名虚构用户串行测试的测量，不能当作多人容量承诺。现有小服务器先保持并发1；规模增加后再评估数据库迁移、后端副本和工具沙箱。
 
-第二阶段真实 SilverBullet 2.12.0 隔离容器测试通过：两用户账号和 Space、真实 Agent token 跨 Space 拒绝、匿名拒绝、ETag 冲突和幂等配置；真实 Pi SDK 的笔记写入、读取及跨用户 trace 拒绝也通过，见 `test/sb-live-verification.json`。微信多连接目前为模拟测试，不能由此宣称真实微信已验收。
+第二阶段真实 SilverBullet 2.12.0 隔离容器测试通过：两用户账号和 Space、真实 Agent token 跨 Space 拒绝、匿名拒绝、ETag 冲突和幂等配置；真实 Pi SDK 的笔记写入、读取及跨用户 trace 拒绝也通过，见 `test/sb-live-verification.json`。服务器 `scripts/verify-live.mjs` 已验证真实模型记忆工具、提醒工具加载、独立SB隔离及真实微信二维码，未扫码或向微信发测试消息。
+
+公网TLS验证、匿名401、登录、Secure且限定路径的Cookie及退出撤销已通过。浏览器验收使用临时公开Playwright容器，程序见 `scripts/verify-ui.mjs`、`scripts/verify-ui-container.py`；生成的虚构账号通过 `cleanup-ui-probe.py` 限定所有权后清理。此检查不代替真人微信收发验收。
 
 后续会话先读 [HANDOFF.md](HANDOFF.md)。

@@ -31,6 +31,7 @@ const wechatProtection = process.env.ASSISTANT_WECHAT_PROTECTION
   ? JSON.parse(readFileSync(process.env.ASSISTANT_WECHAT_PROTECTION, 'utf8')) : {};
 const app = await makeServer({ store, engine, adminPassword: process.env.ASSISTANT_ADMIN_PASSWORD,
   secureCookies: process.env.ASSISTANT_SECURE_COOKIES === 'on', origin: process.env.ASSISTANT_ORIGIN,
+  basePath: process.env.ASSISTANT_BASE_PATH || '',
   wechatClient: process.env.ASSISTANT_WECHAT === 'on' ? new ILinkClient() : undefined,
   wechatOptions: wechatProtection, silverbullet });
 app.server.listen(Number(process.env.ASSISTANT_PORT || 32214), host, () => {

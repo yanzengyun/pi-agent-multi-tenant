@@ -9,12 +9,12 @@ import { makeServer } from '../src/server.mjs';
 import { hashPassword, tokenHash } from '../src/auth.mjs';
 import { RunQueue } from '../src/queue.mjs';
 
-async function fixture(t, engine = new MockEngine()) {
+async function fixture(t, engine = new MockEngine(), options = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'pi-tenant-test-'));
   const store = new Store(directory);
-  const app = await makeServer({ store, engine, adminPassword: 'admin-fixture-password' });
+  const app = await makeServer({ store, engine, adminPassword: 'admin-fixture-password', ...options });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${app.server.address().port}`;
+  const url = `http://127.0.0.1:${app.server.address().port}${options.basePath || ''}`;
   t.after(async () => { await app.close(); rmSync(directory, { recursive: true, force: true }); });
   const api = async (path, { token, method = 'GET', data, headers = {} } = {}) => {
     const response = await fetch(url + path, { method, headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -64,6 +64,20 @@ test('administrator traces show the selected user memory and reject foreign run 
   assert.ok(detail.data.events.some(event => event.kind === 'prompt' && event.payload.system.includes('TRACE_ALICE_PRIVATE')));
   assert.ok(detail.data.events.some(event => event.kind === 'tool' && event.payload.name === 'memory_read'));
   assert.deepEqual((await api(`/api/admin/users/${bob.user.id}/runs`, { token: admin })).data.runs, []);
+});
+
+test('subpath publishing scopes cookies and reminders cannot be managed by another user', async t => {
+  const { api, admin, create } = await fixture(t, new MockEngine(), { basePath: '/assistant', secureCookies: true, origin: 'https://example.test' });
+  const alice = await create('alice'), bob = await create('bob');
+  const login = await api('/api/login', { method: 'POST', data: { username: 'admin', password: 'admin-fixture-password' } });
+  assert.match(login.headers.get('set-cookie'), /Path=\/assistant\//); assert.match(login.headers.get('set-cookie'), /; Secure/);
+  const route = `/api/admin/users/${alice.user.id}/reminders`;
+  assert.equal((await api(route, { token: alice.token })).status, 403);
+  const created = await api(route, { token: admin, method: 'POST', data: { text: 'FAKE_ALICE', at: new Date(Date.now() + 60000).toISOString() } });
+  assert.equal(created.status, 201);
+  assert.equal((await api(`/api/admin/users/${bob.user.id}/reminders/${created.data.id}`, { token: admin, method: 'DELETE', data: {} })).status, 404);
+  assert.deepEqual((await api(`/api/admin/users/${bob.user.id}/reminders`, { token: admin })).data.reminders, []);
+  assert.equal((await api(`${route}/${created.data.id}`, { token: admin, method: 'DELETE', data: {} })).status, 200);
 });
 
 test('administrator run lists are bounded, ordered and contain only the selected user', async t => {
@@ -181,6 +195,6 @@ test('expired sessions cannot authenticate and administrator page has no chat UI
   assert.equal((await api('/api/me', { token: admin })).status, 401);
   const { readFileSync } = await import('node:fs');
   const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
-  assert.match(html, /管理员登录/); assert.match(html, /独立测试微信/);
+  assert.match(html, /管理员登录/); assert.match(html, /未连接其他助手的微信/);
   assert.doesNotMatch(html, /<textarea|qr-code/);
 });

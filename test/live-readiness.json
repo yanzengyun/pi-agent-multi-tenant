@@ -1,0 +1,19 @@
+{
+  "automated_tests": 28,
+  "real_model_memory_tool": true,
+  "reminder_tools_loaded": true,
+  "live_silverbullet_isolation": true,
+  "real_wechat_qr": true,
+  "public_tls_verified": true,
+  "anonymous_admin_401": true,
+  "secure_scoped_cookie": true,
+  "browser_login": true,
+  "browser_create_user": true,
+  "browser_reminders": true,
+  "browser_trace": true,
+  "human_notes_login": true,
+  "note_user_personal_trace_401": true,
+  "browser_qr_image": true,
+  "browser_js_errors": 0,
+  "real_wechat_scan_and_message_verified": false
+}

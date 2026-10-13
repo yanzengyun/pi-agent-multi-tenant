@@ -1,6 +1,6 @@
 const $ = selector => document.querySelector(selector);
 async function api(path, method = 'GET', value) {
-  const response = await fetch(path, { method, credentials: 'same-origin',
+  const response = await fetch(new URL('.' + path, document.baseURI), { method, credentials: 'same-origin',
     headers: value === undefined ? {} : { 'Content-Type': 'application/json' },
     body: value === undefined ? undefined : JSON.stringify(value) });
   const result = await response.json();
@@ -96,6 +96,7 @@ async function showConsole() {
     if (user.role !== 'admin') {
       const controls = document.createElement('div'); controls.className = 'actions';
       controls.append(action('运行记录', () => showTrace(user)));
+      controls.append(action('定时提醒', () => showReminders(user)));
       if (data.wechatEnabled) controls.append(user.wechat.status === 'not_bound'
         ? action('微信扫码', () => bindWechat(user))
         : action('解除绑定', async () => { if (confirm(`解除 ${user.username} 的微信连接？身份归属保留，重新扫码须使用原微信。`)) { await api(`/api/admin/users/${user.id}/wechat`, 'DELETE', {}); await showConsole(); } }));
@@ -111,6 +112,38 @@ async function showConsole() {
     $('#users').append(row);
   }
 }
+let reminderUser = null;
+async function refreshReminders() {
+  const user = reminderUser, data = await api(`/api/admin/users/${user.id}/reminders`);
+  if (reminderUser !== user) return;
+  $('#reminder-list').replaceChildren();
+  if (!data.reminders.length) $('#reminder-list').textContent = '暂无提醒';
+  for (const task of data.reminders) {
+    const row = document.createElement('article'), label = document.createElement('span');
+    const state = { scheduled: '等待执行', waiting_for_wechat: '等待微信连接及首条消息', completed: '已排入投递' }[task.status] || task.status;
+    label.textContent = `${new Date(task.next_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })} · ${task.repeat_daily ? '每天' : '一次'} · ${state} · ${task.text}`;
+    row.append(label, action('取消', async () => {
+      await api(`/api/admin/users/${user.id}/reminders/${task.id}`, 'DELETE', {}); await refreshReminders();
+    })); $('#reminder-list').append(row);
+  }
+}
+async function showReminders(user) {
+  reminderUser = user; $('#reminder-title').textContent = `定时提醒 · ${user.username}`;
+  $('#reminder-status').textContent = ''; $('#reminder-list').replaceChildren(); $('#reminder-form').reset();
+  $('#reminder-dialog').showModal(); await refreshReminders();
+}
+$('#reminder-form').addEventListener('submit', async event => {
+  event.preventDefault(); if (!reminderUser) return;
+  const data = new FormData(event.target);
+  try {
+    await api(`/api/admin/users/${reminderUser.id}/reminders`, 'POST', {
+      text: data.get('text'), at: data.get('at') + ':00+08:00', daily: data.has('daily'),
+    });
+    event.target.reset(); $('#reminder-status').textContent = '提醒已保存'; await refreshReminders();
+  } catch (error) { $('#reminder-status').textContent = error.message; }
+});
+$('#reminder-close').addEventListener('click', () => { $('#reminder-dialog').close(); reminderUser = null; });
+$('#reminder-dialog').addEventListener('cancel', () => { reminderUser = null; });
 $('#login-form').addEventListener('submit', async event => {
   event.preventDefault(); const form = new FormData(event.target);
   try { await api('/api/login', 'POST', Object.fromEntries(form)); $('#login-form').reset(); await showConsole(); notice(''); }

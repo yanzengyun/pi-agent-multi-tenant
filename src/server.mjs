@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { hashPassword, checkPassword, issueToken, tokenHash, requestToken } from './auth.mjs';
 import { RunQueue } from './queue.mjs';
 import { WechatManager } from './wechat.mjs';
+import { Reminders } from './reminders.mjs';
 
 class HttpError extends Error {
   constructor(status, code) { super(code); this.status = status; }
@@ -28,31 +29,36 @@ async function body(req) {
 }
 
 export async function makeServer({ store, engine, adminPassword, secureCookies = false, origin, timeoutMs,
-  wechatClient, wechatOptions, silverbullet }) {
+  wechatClient, wechatOptions, silverbullet, basePath = '' }) {
+  if (basePath && !/^\/[a-zA-Z0-9_-]+$/.test(basePath)) throw new Error('Invalid base path');
   if (!store.users().some(user => user.role === 'admin')) {
     text(adminPassword, 256);
     if (adminPassword.length < 12) throw new Error('Bootstrap admin password must have at least 12 characters');
     store.createUser('admin', await hashPassword(adminPassword), 'admin');
   }
   const dummyPassword = await hashPassword(randomBytes(32).toString('hex'));
-  const queue = new RunQueue(store, engine, { timeoutMs, contextFactory: userId => ({ notes: silverbullet?.tools(userId) }) });
+  const reminders = new Reminders(store, () => { void wechat?.flush(); });
+  const queue = new RunQueue(store, engine, { timeoutMs, contextFactory: userId => ({ notes: silverbullet?.tools(userId), reminders: reminders.tools(userId) }) });
   const wechat = wechatClient && new WechatManager(store, wechatClient, { ...wechatOptions, onMessage: () => queue.kick() });
   if (wechat) { queue.on('settled', () => { void wechat.flush(); }); wechat.start(); }
+  reminders.start();
   if (silverbullet && wechat) {
     for (const binding of store.wechatBindings()) {
       if (binding.status === 'connected') void silverbullet.provision(store.userById(binding.user_id)).catch(() => {});
     }
   }
-  const index = readFileSync(new URL('../public/index.html', import.meta.url));
+  const index = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8').replace('<!--APP_BASE-->', `<base href="${basePath}/">`);
   let activeLogins = 0;
   const failures = new Map();
   const server = createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'");
     const reply = (code, data) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); };
     try {
-      const path = new URL(req.url, 'http://localhost').pathname;
+      const originalPath = new URL(req.url, 'http://localhost').pathname;
+      if (basePath && !originalPath.startsWith(basePath + '/')) throw new HttpError(404, 'not_found');
+      const path = originalPath.slice(basePath.length);
       if (req.headers.origin && req.headers.origin !== (origin || `http://${req.headers.host}`)) throw new HttpError(403, 'origin_denied');
       if (req.method === 'GET' && path === '/') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(index); return;
@@ -75,14 +81,14 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
           throw new HttpError(401, 'invalid_credentials');
         }
         const token = issueToken(store, user.id);
-        res.setHeader('Set-Cookie', `pi_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400${secureCookies ? '; Secure' : ''}`);
+        res.setHeader('Set-Cookie', `pi_session=${token}; HttpOnly; SameSite=Strict; Path=${basePath}/; Max-Age=86400${secureCookies ? '; Secure' : ''}`);
         return reply(200, { token, user: { id: user.id, username: user.username, role: user.role } });
       }
       const token = requestToken(req), principal = token && store.principal(tokenHash(token));
       if (!principal) throw new HttpError(401, 'authentication_required');
       if (req.method === 'POST' && path === '/api/logout') {
         await body(req); store.deleteToken(tokenHash(token));
-        res.setHeader('Set-Cookie', 'pi_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
+        res.setHeader('Set-Cookie', `pi_session=; HttpOnly; SameSite=Strict; Path=${basePath}/; Max-Age=0${secureCookies ? '; Secure' : ''}`);
         return reply(200, { ok: true });
       }
       if (req.method === 'GET' && path === '/api/me') return reply(200, principal);
@@ -102,6 +108,16 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
           // A request cannot supply a role or a filesystem path.
           const user = store.createUser(username, await hashPassword(password));
           return reply(201, user);
+        }
+        const tasks = path.match(/^\/api\/admin\/users\/([^/]+)\/reminders(?:\/([^/]+))?$/);
+        if (tasks) {
+          const user = store.userById(tasks[1]);
+          if (!user || user.role !== 'user') throw new HttpError(404, 'not_found');
+          try {
+            if (req.method === 'GET' && !tasks[2]) return reply(200, { reminders: reminders.list(user.id) });
+            if (req.method === 'POST' && !tasks[2]) return reply(201, reminders.create(user.id, await body(req)));
+            if (req.method === 'DELETE' && tasks[2]) { await body(req); return reply(200, reminders.remove(user.id, tasks[2])); }
+          } catch (error) { if (error.status) throw error; throw new HttpError(error.message === 'reminder_not_found' ? 404 : 400, error.message); }
         }
         const adminRuns = path.match(/^\/api\/admin\/users\/([^/]+)\/runs(?:\/([^/]+)\/trace)?$/);
         if (adminRuns && req.method === 'GET') {
@@ -209,6 +225,7 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
   });
   server.requestTimeout = 15000; server.headersTimeout = 10000;
   return { server, queue, wechat, async close() {
+    reminders.close();
     const closed = server.listening ? new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())) : Promise.resolve();
     server.closeIdleConnections(); await wechat?.close(); await queue.close(); await closed; await silverbullet?.close(); store.close();
   } };

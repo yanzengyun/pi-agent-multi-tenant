@@ -1,17 +1,18 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pi 助手管理台</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<head><meta charset="utf-8"><!--APP_BASE--><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pi 助手管理台</title><link rel="stylesheet" href="style.css"><script src="app.js" defer></script></head>
 <body><main>
   <header><p class="eyebrow">PI ASSISTANT</p><h1>助手管理台</h1><p>统一管理用户；每个人的聊天与记忆独立保存。</p></header>
   <p id="notice" role="status"></p>
   <section id="login"><h2>管理员登录</h2><form id="login-form"><label>账号<input name="username" value="admin" autocomplete="username" required></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><button>登录</button></form></section>
   <div id="console" hidden>
     <section class="overview"><div><h2>用户</h2><p id="mode"></p></div><button id="logout" class="secondary">退出登录</button></section>
-    <section><h2>添加用户</h2><form id="user-form" class="inline"><label>用户标识<input name="username" placeholder="例如 alice" pattern="[a-zA-Z0-9_-]{1,64}" required></label><button>创建独立用户</button></form><p class="muted">新用户从空白记忆开始。扫码绑定后自动准备独立笔记空间；开发环境请使用独立测试微信。</p></section>
+    <section><h2>添加用户</h2><form id="user-form" class="inline"><label>用户标识<input name="username" placeholder="例如 alice" pattern="[a-zA-Z0-9_-]{1,64}" required></label><button>创建独立用户</button></form><p class="muted">创建用户后，让本人扫码绑定微信。聊天、记忆和笔记分别保存。</p></section>
     <section><div id="users"></div></section>
   </div>
-  <dialog id="wechat-dialog"><h2 id="qr-title">绑定微信</h2><p>此微信将连接新助手。请先用独立测试账号；现有个人助手暂不重新绑定。</p><img id="qr-image" alt="微信登录二维码" width="280" height="280"><p id="qr-status" role="status"></p><button id="qr-close" class="secondary">关闭</button></dialog>
+  <dialog id="wechat-dialog"><h2 id="qr-title">绑定微信</h2><p>让对应用户用自己的微信扫码并确认。扫码可能切换已有连接，请使用未连接其他助手的微信。</p><img id="qr-image" alt="微信登录二维码" width="280" height="280"><p id="qr-status" role="status"></p><button id="qr-close" class="secondary">关闭</button></dialog>
   <dialog id="sb-dialog"><h2>笔记登录信息</h2><p>将下面的人类账号交给对应用户；Agent token 始终只留在后台。</p><label>笔记地址<input id="sb-url" readonly></label><label>用户名<input id="sb-username" readonly></label><label>初始密码<input id="sb-password" type="password" readonly></label><button id="sb-reveal" class="secondary">显示 / 隐藏密码</button><button id="sb-close" class="secondary">关闭</button></dialog>
   <dialog id="trace-dialog"><h2 id="trace-title">运行记录</h2><p class="muted">查看本次使用的提示词、记忆和工具事件。私人内容仅向管理员展示。</p><div id="trace-runs"></div><div id="trace-events"></div><button id="trace-close" class="secondary">关闭</button></dialog>
-  <footer>开发环境 · 当前个人助手独立运行</footer>
+  <dialog id="reminder-dialog"><h2 id="reminder-title">定时提醒</h2><p class="muted">时间均为北京时间。扫码后需在微信发一条消息，才能投递提醒；微信会话失效时需要重新连接。</p><form id="reminder-form"><label>提醒内容<input name="text" maxlength="2000" required></label><label>首次提醒时间<input name="at" type="datetime-local" required></label><label><span><input name="daily" type="checkbox"> 每天重复</span></label><button>添加提醒</button></form><p id="reminder-status" role="status"></p><div id="reminder-list"></div><button id="reminder-close" class="secondary">关闭</button></dialog>
+  <footer>个人助手独立运行 · 用户聊天与记忆分别保存</footer>
 </main></body></html>

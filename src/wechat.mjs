@@ -163,6 +163,7 @@ export class WechatManager {
       const binding = this.store.wechatBinding(inbox.user_id);
       if (!binding || binding.id !== inbox.binding_id) { this.store.delivered(inbox.id, 'cancelled'); continue; }
       if (binding.status !== 'connected') continue;
+      if (inbox.message_id.startsWith('reminder:')) inbox.context_token = this.store.latestWechatContext(binding.id) || inbox.context_token;
       try {
         const reply = inbox.status === 'completed' ? inbox.response : '本次处理未完成，请稍后重试。';
         const characters = Array.from(reply), chunks = [];

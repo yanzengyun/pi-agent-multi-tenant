@@ -9,7 +9,18 @@
 - 用户已要求开始开发，并指定GitHub仓库 https://github.com/yanzengyun/pi-agent-multi-tenant.git 上传代码。
 - 当前个人助手必须保持可用。没有授权把真实用户状态迁入开发环境；测试仅用虚构用户。
 
-## 最新进度：个人助手已恢复，继续本地开发（2026-10-13）
+## 最新进度：独立多用户服务已上线（2026-10-13）
+
+- 用户要求继续开发到可直接使用并提供管理后台，已部署独立正式实例。地址https://123.56.157.198:32651/assistant/，网关仍使用原zengyuny账号；后台admin密码私有保存本机alibaba_host/config/multi-tenant-login.json、服务器/home/admin/.config/pi-agent-multi-tenant/login.json，不输出或写Git。
+- 代码/home/admin/pi-agent-multi-tenant-live，状态/home/admin/.local/share/pi-agent-multi-tenant/data，私有配置/home/admin/.config/pi-agent-multi-tenant。pi-multi-tenant.service开机enabled、异常重启，监听32215，仅loopback；MemoryHigh256MiB/Max384MiB/CPUQuota50%。旧开发实例仍停止。
+- 独立SB容器silverbullet-multi-tenant，loopback32216，数据/opt/pi-agent-multi-tenant-sb/data，restartunless-stopped，128MiB/0.25CPU。个人SB不改。/users/<uuid>/使用SB自身账号/Space权限；管理员后台和个人trace仍由原密码网关保护，不向笔记用户分享网关口令。
+- 新增一次性/每日文本提醒，数据库持久化、按用户工具和管理员UI、启动恢复、漏执行每日提醒合并一条；未绑定或没有首条微信上下文则waiting_for_wechat。微信旧上下文或token失效不保证主动送达，需要用户再发消息/扫码。未实现定时LLM复盘或复杂cron。
+- 最终28项本地自动测试通过，服务器真实模型调用memory_read、提醒工具加载、真实SB隔离、真实二维码生成通过。公网严格TLS、匿名401、Cookie路径/Secure、注销撤销通过。
+- 临时Playwright容器实测管理登录、建用户、提醒创建取消、trace页面、笔记账号弹窗、原生笔记用户登录、笔记用户访问个人trace401、真实二维码PNG显示；JS错误0。未真人扫码、未主动发送测试微信；最终微信收发须用户绑定后确认。
+- 验收使用虚构用户；浏览器账号/任务/Space与SB账号已按所有权清理，后台保留管理员和其虚构模型验收会话。二维码只生成未扫码。个人Pi PID2985不变。
+- 部署脚本scripts/deploy-live.py，远程验收verify-live.mjs，浏览器verify-ui-container.py/verify-ui.mjs及cleanup-ui-probe.py。依赖锁定SDK；发布前内存预检，队列有任务拒绝部署。重新发布有短暂停机，不宣称原子回滚。
+
+## 历史：个人助手已恢复，继续本地开发（2026-10-13）
 
 - 服务器已重启，个人Pi继续原会话，微信显示连接、9个scheduled、trace32213 HTTP200。用户批准后已启用个人pi-wechat-watchdog开机监控，PID2985不变；详见alibaba_host/pi-agent/autostart和对应HANDOFF。
 - 二阶段已提交并推送GitHub main，提交4c96fca；微信真实收发和服务器新版尚未验收。独立开发/实验模型实例仍保持停止，减少小主机资源占用。

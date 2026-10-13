@@ -54,6 +54,15 @@ export class PiEngine {
         parameters: Type.Object({ page: Type.String({ maxLength: 120 }), content: Type.String({ maxLength: 30000 }), etag: Type.Optional(Type.String()) }),
         async execute(_id, { page, content, etag }) { return result(JSON.stringify(await ctx.notes.write(page, content, etag, ctx.signal))); } },
     );
+    if (ctx.reminders) customTools.push(
+      { name: 'reminder_create', label: 'Create Reminder', description: 'Only when the user asks: schedule a text reminder for this user. at must be a future ISO timestamp with timezone; daily repeats every 24h. WeChat needs the user to send at least one message first.',
+        parameters: Type.Object({ text: Type.String({ maxLength: 2000 }), at: Type.String(), daily: Type.Optional(Type.Boolean()) }),
+        async execute(_id, value) { return result(JSON.stringify(ctx.reminders.create(value))); } },
+      { name: 'reminder_list', label: 'List Reminders', description: 'List only this user’s reminders.', parameters: Type.Object({}),
+        async execute() { return result(JSON.stringify(ctx.reminders.list())); } },
+      { name: 'reminder_cancel', label: 'Cancel Reminder', description: 'Cancel this user’s reminder when requested.', parameters: Type.Object({ id: Type.String() }),
+        async execute(_id, { id }) { return result(JSON.stringify(ctx.reminders.remove(id))); } },
+    );
     if (this.config.searchKey) customTools.push({
       name: 'web_search', label: 'Web Search', description: 'Search public webpages through MiniMax Coding Plan. Send a search query only.',
       parameters: Type.Object({ query: Type.String({ maxLength: 500 }) }),

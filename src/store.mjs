@@ -54,6 +54,9 @@ export class Store {
       CREATE TABLE IF NOT EXISTS integrations (
         user_id TEXT NOT NULL REFERENCES users(id), kind TEXT NOT NULL,
         status TEXT NOT NULL, state TEXT NOT NULL, PRIMARY KEY(user_id,kind));
+      CREATE TABLE IF NOT EXISTS reminders (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), text TEXT NOT NULL,
+        next_at INTEGER NOT NULL, repeat_daily INTEGER NOT NULL, status TEXT NOT NULL);
     `);
   }
   close() { this.db.close(); }
@@ -175,6 +178,9 @@ export class Store {
       WHERE i.delivery='pending' AND r.status IN ('completed','failed','interrupted') ORDER BY r.created_at,i.rowid`).all();
   }
   delivered(id, status = 'sent') { this.db.prepare('UPDATE wechat_inbox SET delivery=? WHERE id=?').run(status, id); }
+  latestWechatContext(bindingId) {
+    return this.db.prepare("SELECT context_token FROM wechat_inbox WHERE binding_id=? AND message_id NOT LIKE 'reminder:%' ORDER BY rowid DESC LIMIT 1").get(bindingId)?.context_token;
+  }
   integration(userId, kind) {
     const row = this.db.prepare('SELECT status,state FROM integrations WHERE user_id=? AND kind=?').get(userId, kind);
     return row && { status: row.status, state: JSON.parse(row.state) };
