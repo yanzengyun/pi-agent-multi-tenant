@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pi 助手管理台</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body><main>
+  <header><p class="eyebrow">PI ASSISTANT</p><h1>助手管理台</h1><p>统一管理用户；每个人的聊天与记忆独立保存。</p></header>
+  <p id="notice" role="status"></p>
+  <section id="login"><h2>管理员登录</h2><form id="login-form"><label>账号<input name="username" value="admin" autocomplete="username" required></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><button>登录</button></form></section>
+  <div id="console" hidden>
+    <section class="overview"><div><h2>用户</h2><p id="mode"></p></div><button id="logout" class="secondary">退出登录</button></section>
+    <section><h2>添加用户</h2><form id="user-form" class="inline"><label>用户标识<input name="username" placeholder="例如 alice" pattern="[a-zA-Z0-9_-]{1,64}" required></label><button>创建独立用户</button></form><p class="muted">新用户从空白记忆开始。微信扫码和 SilverBullet 自动配置将在后续阶段接入。</p></section>
+    <section><div id="users"></div></section>
+  </div>
+  <footer>开发环境 · 当前个人助手独立运行</footer>
+</main></body></html>

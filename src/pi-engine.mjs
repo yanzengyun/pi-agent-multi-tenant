@@ -1,0 +1,105 @@
+import { mkdirSync, realpathSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
+import { systemPrompt } from './engine.mjs';
+
+export class PiEngine {
+  mode = 'pi';
+  constructor(config) { this.config = config; }
+  async initialize() {
+    const specifier = this.config.sdkModule;
+    this.sdk = await import(specifier.startsWith('/') ? pathToFileURL(specifier).href : specifier);
+    const require = createRequire(specifier.startsWith('/') ? specifier : import.meta.url);
+    this.Type = (await import(pathToFileURL(require.resolve('typebox')).href)).Type;
+  }
+  async run(ctx, prompt) {
+    const { createAgentSession, createExtensionRuntime, ModelRuntime, SessionManager, SettingsManager } = this.sdk;
+    const root = join(ctx.directory, 'tenants', ctx.userId);
+    const workspace = join(root, 'workspace'), sessions = join(root, 'sessions'), agentDir = join(root, 'agent');
+    for (const directory of [workspace, sessions, agentDir]) mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const runtime = await ModelRuntime.create({ authPath: join(agentDir, 'auth.json'),
+      modelsPath: this.config.modelsPath, modelsStorePath: join(agentDir, 'catalog.json'),
+      allowModelNetwork: false, refreshOnCreate: false });
+    await runtime.setRuntimeApiKey(this.config.provider, this.config.apiKey);
+    const model = runtime.getModel(this.config.provider, this.config.model);
+    if (!model) throw new Error('Configured model unavailable');
+    const manager = ctx.conversation.sdk_file
+      ? SessionManager.open(this.checkedFile(ctx.conversation.sdk_file, sessions), sessions, workspace)
+      : SessionManager.create(workspace, sessions);
+    const resourceLoader = {
+      getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+      getSkills: () => ({ skills: [], diagnostics: [] }),
+      getPrompts: () => ({ prompts: [], diagnostics: [] }),
+      getThemes: () => ({ themes: [], diagnostics: [] }),
+      getAgentsFiles: () => ({ agentsFiles: [] }),
+      getSystemPrompt: () => systemPrompt(ctx.memory()), getSystemPromptSource: () => undefined,
+      getAppendSystemPrompt: () => [], getAppendSystemPromptSources: () => [],
+      extendResources() {}, async reload() {},
+    };
+    const Type = this.Type;
+    const result = text => ({ content: [{ type: 'text', text }], details: {} });
+    const customTools = [
+      { name: 'memory_read', label: 'Memory Read', description: 'Read only the authenticated user’s persistent memory.',
+        parameters: Type.Object({}), async execute() { return result(ctx.memory()); } },
+      { name: 'memory_write', label: 'Memory Write', description: 'Replace the authenticated user’s memory; preserve existing relevant facts.',
+        parameters: Type.Object({ content: Type.String({ maxLength: 8000 }) }),
+        async execute(_id, { content }) { ctx.writeMemory(content); return result('Memory saved'); } },
+    ];
+    if (this.config.searchKey) customTools.push({
+      name: 'web_search', label: 'Web Search', description: 'Search public webpages through MiniMax Coding Plan. Send a search query only.',
+      parameters: Type.Object({ query: Type.String({ maxLength: 500 }) }),
+      execute: async (_id, { query }) => {
+        const response = await fetch('https://api.minimaxi.com/v1/coding_plan/search', {
+          method: 'POST', signal: AbortSignal.any([ctx.signal, AbortSignal.timeout(20000)]),
+          headers: { Authorization: `Bearer ${this.config.searchKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: query }),
+        });
+        if (!response.ok) throw new Error('Search unavailable');
+        const data = await response.json();
+        if (data.base_resp?.status_code !== 0) throw new Error('Search failed');
+        return result(JSON.stringify(data));
+      },
+    });
+    const { session } = await createAgentSession({ cwd: workspace, agentDir, model, modelRuntime: runtime,
+      thinkingLevel: this.config.thinkingLevel, resourceLoader, sessionManager: manager,
+      settingsManager: SettingsManager.inMemory({ compaction: { enabled: true }, retry: { enabled: false } }),
+      tools: customTools.map(t => t.name), customTools,
+    });
+    const abort = () => { void session.abort(); };
+    const unsubscribe = session.subscribe(event => {
+      if (['message_end', 'tool_execution_start', 'tool_execution_end', 'auto_compaction_end'].includes(event.type)) {
+        ctx.emit('sdk_event', this.sanitize(event));
+      }
+    });
+    ctx.emit('context', { system: session.systemPrompt, activeTools: session.getActiveToolNames(),
+      provider: this.config.provider, model: this.config.model });
+    ctx.signal.addEventListener('abort', abort, { once: true });
+    try {
+      ctx.signal.throwIfAborted();
+      await session.prompt(prompt);
+      const assistant = session.messages.findLast(message => message.role === 'assistant');
+      if (assistant?.errorMessage || assistant?.stopReason === 'error' || assistant?.stopReason === 'aborted') {
+        throw new Error('Model failed');
+      }
+      const text = session.getLastAssistantText();
+      if (!text) throw new Error('Empty model response');
+      return text;
+    } finally {
+      if (manager.getSessionFile()) ctx.setSdkFile(manager.getSessionFile());
+      ctx.signal.removeEventListener('abort', abort); unsubscribe(); session.dispose();
+    }
+  }
+  checkedFile(file, directory) {
+    const actual = realpathSync(resolve(file));
+    if (!actual.startsWith(realpathSync(directory) + sep)) throw new Error('Session path outside tenant');
+    return actual;
+  }
+  sanitize(value) {
+    let json = JSON.stringify(value);
+    for (const key of [this.config.apiKey, this.config.searchKey]) {
+      if (key) json = json.split(key).join('[REDACTED]');
+    }
+    return json.length > 100000 ? { truncated: true, preview: json.slice(0, 100000) } : JSON.parse(json);
+  }
+}

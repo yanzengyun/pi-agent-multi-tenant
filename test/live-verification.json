@@ -1,0 +1,23 @@
+{
+  "health": {
+    "status": "ok",
+    "mode": "pi"
+  },
+  "users": 2,
+  "runs": [
+    {
+      "memory_tool_called": true,
+      "own_canary_only": true,
+      "cross_trace_denied": true
+    },
+    {
+      "memory_tool_called": true,
+      "own_canary_only": true,
+      "cross_trace_denied": true
+    }
+  ],
+  "sdk_history_restored": true,
+  "real_web_search": true,
+  "production_config_and_process_unchanged": true,
+  "production_trace_http": 200
+}

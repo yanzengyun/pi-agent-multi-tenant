@@ -1,0 +1,11 @@
+node_modules/
+.data/
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-*
+*.log
+*.pem
+*.key
+coverage/
