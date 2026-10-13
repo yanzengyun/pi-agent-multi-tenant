@@ -34,3 +34,10 @@
 - 原GitHub main只有初始README，已基于origin/main开发，保留历史，禁止强推。
 - npm test只需Node>=22.19，无需npm install；本地沙箱禁止监听端口时需对回环测试请求outside-sandbox执行。
 - scripts/deploy-dev.py只重启pi-multi-tenant-dev，不碰pi-wechat；重新部署前确认没有开发运行中的任务。
+
+## Git 上传当前状态
+
+- 第一版已本地提交，并通过Git bundle同步服务器完整仓库/home/admin/pi-agent-multi-tenant；开发运行副本另在/home/admin/pi-agent-multi-tenant-dev。
+- GitHub仓库可公开读取，main初始提交dbda1b2保留。首次push失败：IDE askpass socket失效；排除IDE后仍无GitHub用户名凭据，现有项目credential store未返回GitHub认证。没有强推，也没有关闭TLS校验。
+- 已向用户询问配置GitHub写入认证方式：只授权指定仓库Contents读写的私有token文件，或网页登录授权。等待用户提供认证；拿到后继续push与远端提交核验，不能把token写日志/回复/Git。
+- 本地Node24与服务器Node22环境的7项集成测试均通过。独立真实Pi SDK测试通过；开发服务约160MiB RSS，仅回环32214。
