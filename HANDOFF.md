@@ -37,9 +37,8 @@
 
 ## Git 上传当前状态
 
-- 第一版已本地提交，并通过Git bundle同步服务器完整仓库/home/admin/pi-agent-multi-tenant；开发运行副本另在/home/admin/pi-agent-multi-tenant-dev。
-- GitHub仓库可公开读取，main初始提交dbda1b2保留。首次push失败：IDE askpass socket失效；排除IDE后仍无GitHub用户名凭据，现有项目credential store未返回GitHub认证。没有强推，也没有关闭TLS校验。
-- 已向用户询问配置GitHub写入认证方式：只授权指定仓库Contents读写的私有token文件，或网页登录授权。等待用户提供认证；拿到后继续push与远端提交核验，不能把token写日志/回复/Git。
-- 本地Node24与服务器Node22环境的7项集成测试均通过。独立真实Pi SDK测试通过；开发服务约160MiB RSS，仅回环32214。
-
-- 用户随后提供私有token文件，已将权限收紧为0600；只通过限定仓库的Git credential helper传递，不输出token。GitHub认证识别账号yanzengyun，但push返回403 Permission denied，当前token缺少此仓库可用写权限。已请用户确认token仓库选择和Contents=Read and write，保存/必要时更新文件后重试。不能误报已上传。
+- 用户更新token权限后重试成功，GitHub main已收到第一版开发代码；初始提交dbda1b2及后续本地提交历史保留，没有强推。
+- GitHub仓库：https://github.com/yanzengyun/pi-agent-multi-tenant.git 。本地工作区干净；完整服务器Git副本/home/admin/pi-agent-multi-tenant，开发运行副本/home/admin/pi-agent-multi-tenant-dev。
+- 上传认证通过限定github.com及此仓库路径的Git credential helper读取用户授权私有文件；只引用文件，不输出token，不将凭据加入Git。临时helper在/tmp/pi-github-credential-helper.py；环境重建后若丢失，需重建同等限定的helper。
+- 历史认证问题已解决：环境代理CA、失效IDE askpass、token最初缺少仓库写权限。后续不要禁用TLS校验；调用Git时移除GIT_CURL_VERBOSE等调试环境变量。
+- 本地Node24与服务器Node22环境的7项集成测试均通过；独立真实Pi SDK验证通过。当前版本尚未接真实微信扫码和SB自动配置，下一步按“待做”继续开发。
