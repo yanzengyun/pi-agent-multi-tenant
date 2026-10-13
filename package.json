@@ -3,11 +3,23 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.19.0" },
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "scripts": {
     "start": "node src/main.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "setup:pi": "npm ci --prefix sdk-runtime --ignore-scripts --no-audit --no-fund"
   },
-  "peerDependencies": { "@earendil-works/pi-coding-agent": "1.1.0" },
-  "peerDependenciesMeta": { "@earendil-works/pi-coding-agent": { "optional": true } }
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "1.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "qrcode": "1.5.4"
+  }
 }

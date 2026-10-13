@@ -8,6 +8,44 @@ async function api(path, method = 'GET', value) {
   return result;
 }
 function notice(message) { $('#notice').textContent = message; }
+const states = { disabled: '未启用', not_bound: '未绑定', connected: '已连接', expired: '登录已过期',
+  ready: '已准备', not_provisioned: '未准备', provisioning: '准备中', failed: '准备失败' };
+let activeQr = null, qrTimer;
+function action(label, handler) {
+  const button = document.createElement('button'); button.textContent = label; button.className = 'secondary';
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try { await handler(); } catch (error) { notice(error.message); } finally { button.disabled = false; }
+  }); return button;
+}
+async function bindWechat(user) {
+  const result = await api(`/api/admin/users/${user.id}/wechat/login`, 'POST', {});
+  activeQr = { userId: user.id, id: result.id }; $('#qr-title').textContent = `绑定微信 · ${user.username}`;
+  $('#qr-image').src = result.image; $('#qr-status').textContent = '等待扫码'; $('#wechat-dialog').showModal();
+  const current = activeQr;
+  async function poll() {
+    try {
+      const status = await api(`/api/admin/users/${current.userId}/wechat/login/${current.id}`);
+      if (activeQr !== current) return;
+      $('#qr-status').textContent = { wait: '等待扫码', scaned: '已扫码，请在手机上确认', scaned_but_redirect: '正在切换登录服务',
+        confirmed: '微信已绑定，笔记空间会自动准备', expired: '二维码已过期，请关闭后重新生成', cancelled: '已取消', failed: '绑定失败' }[status.status] || status.status;
+      if (['confirmed', 'expired', 'cancelled', 'failed'].includes(status.status)) {
+        activeQr = null; await showConsole(); return;
+      }
+    } catch (error) { if (activeQr !== current) return; $('#qr-status').textContent = error.message; }
+    if (activeQr === current) qrTimer = setTimeout(poll, 2000);
+  }
+  qrTimer = setTimeout(poll, 2000);
+}
+async function closeQr() {
+  const current = activeQr; activeQr = null; clearTimeout(qrTimer); $('#wechat-dialog').close(); $('#qr-image').removeAttribute('src');
+  if (current) await api(`/api/admin/users/${current.userId}/wechat/login/${current.id}`, 'DELETE', {});
+}
+$('#qr-close').addEventListener('click', () => { closeQr().catch(error => notice(error.message)); });
+$('#wechat-dialog').addEventListener('cancel', event => { event.preventDefault(); closeQr().catch(error => notice(error.message)); });
+$('#sb-close').addEventListener('click', () => { $('#sb-dialog').close(); $('#sb-password').value = ''; });
+$('#sb-dialog').addEventListener('cancel', () => { $('#sb-password').value = ''; });
+$('#sb-reveal').addEventListener('click', () => { $('#sb-password').type = $('#sb-password').type === 'password' ? 'text' : 'password'; });
 async function showConsole() {
   const me = await api('/api/me');
   if (me.role !== 'admin') throw new Error('只有管理员可以使用此管理台');
@@ -18,8 +56,24 @@ async function showConsole() {
   for (const user of data.users) {
     const row = document.createElement('article');
     const name = document.createElement('strong'); name.textContent = user.username;
-    const detail = document.createElement('span'); detail.textContent = user.role === 'admin' ? '管理员' : '普通用户 · 微信未绑定';
-    row.append(name, detail); $('#users').append(row);
+    const detail = document.createElement('span'); detail.textContent = user.role === 'admin' ? '管理员' :
+      `微信：${states[user.wechat.status] || user.wechat.status} · 笔记：${states[user.silverbullet.status] || user.silverbullet.status}`;
+    const info = document.createElement('div'); info.append(name, detail); row.append(info);
+    if (user.role !== 'admin') {
+      const controls = document.createElement('div'); controls.className = 'actions';
+      if (data.wechatEnabled) controls.append(user.wechat.status === 'not_bound'
+        ? action('微信扫码', () => bindWechat(user))
+        : action('解除绑定', async () => { if (confirm(`解除 ${user.username} 的微信连接？身份归属保留，重新扫码须使用原微信。`)) { await api(`/api/admin/users/${user.id}/wechat`, 'DELETE', {}); await showConsole(); } }));
+      if (data.silverbulletEnabled) controls.append(user.silverbullet.status === 'ready'
+        ? action('笔记登录信息', async () => {
+          const login = await api(`/api/admin/users/${user.id}/silverbullet/credentials`, 'POST', {});
+          $('#sb-url').value = login.url; $('#sb-username').value = login.username; $('#sb-password').value = login.password;
+          $('#sb-password').type = 'password'; $('#sb-dialog').showModal();
+        })
+        : action('准备笔记空间', async () => { await api(`/api/admin/users/${user.id}/silverbullet`, 'POST', {}); await showConsole(); }));
+      row.append(controls);
+    }
+    $('#users').append(row);
   }
 }
 $('#login-form').addEventListener('submit', async event => {

@@ -1,0 +1,13 @@
+{
+  "version": "2.12.0",
+  "synthetic_users": 2,
+  "transport": "official_container",
+  "private_spaces_created": true,
+  "real_agent_cross_space_denied": true,
+  "etag_conflicts_enforced": true,
+  "anonymous_access_denied": true,
+  "idempotent_provisioning": true,
+  "real_pi_sdk_note_tool": true,
+  "real_pi_sdk_note_read": true,
+  "all_tenant_accounts_non_admin": true
+}

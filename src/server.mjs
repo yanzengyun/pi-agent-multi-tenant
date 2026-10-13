@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { hashPassword, checkPassword, issueToken, tokenHash, requestToken } from './auth.mjs';
 import { RunQueue } from './queue.mjs';
+import { WechatManager } from './wechat.mjs';
 
 class HttpError extends Error {
   constructor(status, code) { super(code); this.status = status; }
@@ -26,21 +27,29 @@ async function body(req) {
   } catch { throw new HttpError(400, 'invalid_json'); }
 }
 
-export async function makeServer({ store, engine, adminPassword, secureCookies = false, origin, timeoutMs }) {
+export async function makeServer({ store, engine, adminPassword, secureCookies = false, origin, timeoutMs,
+  wechatClient, wechatOptions, silverbullet }) {
   if (!store.users().some(user => user.role === 'admin')) {
     text(adminPassword, 256);
     if (adminPassword.length < 12) throw new Error('Bootstrap admin password must have at least 12 characters');
     store.createUser('admin', await hashPassword(adminPassword), 'admin');
   }
   const dummyPassword = await hashPassword(randomBytes(32).toString('hex'));
-  const queue = new RunQueue(store, engine, { timeoutMs });
+  const queue = new RunQueue(store, engine, { timeoutMs, contextFactory: userId => ({ notes: silverbullet?.tools(userId) }) });
+  const wechat = wechatClient && new WechatManager(store, wechatClient, { ...wechatOptions, onMessage: () => queue.kick() });
+  if (wechat) { queue.on('settled', () => { void wechat.flush(); }); wechat.start(); }
+  if (silverbullet && wechat) {
+    for (const binding of store.wechatBindings()) {
+      if (binding.status === 'connected') void silverbullet.provision(store.userById(binding.user_id)).catch(() => {});
+    }
+  }
   const index = readFileSync(new URL('../public/index.html', import.meta.url));
   let activeLogins = 0;
   const failures = new Map();
   const server = createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'");
     const reply = (code, data) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); };
     try {
       const path = new URL(req.url, 'http://localhost').pathname;
@@ -79,7 +88,10 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
       if (req.method === 'GET' && path === '/api/me') return reply(200, principal);
       if (path.startsWith('/api/admin/')) {
         if (principal.role !== 'admin') throw new HttpError(403, 'admin_required');
-        if (req.method === 'GET' && path === '/api/admin/users') return reply(200, { users: store.users(), mode: engine.mode || 'mock', wechat: 'not_connected' });
+        if (req.method === 'GET' && path === '/api/admin/users') return reply(200, {
+          users: store.users().map(user => ({ ...user, wechat: wechat?.view(user.id) || { status: 'disabled' },
+            silverbullet: silverbullet?.view(user.id) || { status: 'disabled' } })), mode: engine.mode || 'mock',
+          wechatEnabled: Boolean(wechat), silverbulletEnabled: Boolean(silverbullet) });
         if (req.method === 'POST' && path === '/api/admin/users') {
           const input = await body(req), username = text(input.username, 64);
           if (!/^[a-zA-Z0-9_-]{1,64}$/.test(username)) throw new HttpError(400, 'invalid_username');
@@ -90,6 +102,65 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
           // A request cannot supply a role or a filesystem path.
           const user = store.createUser(username, await hashPassword(password));
           return reply(201, user);
+        }
+        const integration = path.match(/^\/api\/admin\/users\/([^/]+)\/(wechat|silverbullet)(?:\/(login|credentials)(?:\/([^/]+))?)?$/);
+        if (integration) {
+          const user = store.userById(integration[1]);
+          if (!user || user.role !== 'user') throw new HttpError(404, 'not_found');
+          const [, , kind, action, attemptId] = integration;
+          if (kind === 'wechat') {
+            if (!wechat) throw new HttpError(503, 'wechat_disabled');
+            if (req.method === 'POST' && action === 'login' && !attemptId) {
+              await body(req);
+              try { return reply(201, await wechat.login(user.id)); }
+              catch (error) { throw new HttpError(409, error.message === 'wechat_already_bound' ? error.message : 'wechat_login_failed'); }
+            }
+            if (req.method === 'GET' && action === 'login' && attemptId) {
+              try {
+                const result = await wechat.status(user.id, attemptId);
+                if (result.status === 'confirmed' && silverbullet) void silverbullet.provision(user).catch(() => {});
+                return reply(200, result);
+              }
+              catch (error) {
+                if (error.message === 'login_not_found') throw new HttpError(404, 'not_found');
+                throw new HttpError(409, 'wechat_binding_failed');
+              }
+            }
+            if (req.method === 'DELETE' && action === 'login' && attemptId) {
+              await body(req);
+              try { return reply(200, wechat.cancelLogin(user.id, attemptId)); }
+              catch { throw new HttpError(404, 'not_found'); }
+            }
+            if (req.method === 'DELETE' && !action) { await body(req); wechat.disconnect(user.id); return reply(200, { ok: true }); }
+            if (req.method === 'GET' && !action) return reply(200, wechat.view(user.id));
+          } else {
+            if (!silverbullet) throw new HttpError(503, 'silverbullet_disabled');
+            if (req.method === 'POST' && !action) {
+              await body(req);
+              try { return reply(201, await silverbullet.provision(user)); }
+              catch { throw new HttpError(502, 'silverbullet_provision_failed'); }
+            }
+            // Human login credentials require an explicit administrator action.
+            if (req.method === 'POST' && action === 'credentials') {
+              await body(req);
+              try { return reply(200, silverbullet.loginDetails(user.id)); }
+              catch { throw new HttpError(409, 'silverbullet_not_ready'); }
+            }
+            if (req.method === 'GET' && !action) return reply(200, silverbullet.view(user.id));
+          }
+        }
+      }
+      const note = path.match(/^\/api\/notes\/(.+)$/);
+      if (note && ['GET', 'PUT'].includes(req.method)) {
+        if (!silverbullet) throw new HttpError(503, 'silverbullet_disabled');
+        let page;
+        try { page = decodeURIComponent(note[1]); } catch { throw new HttpError(400, 'invalid_note_path'); }
+        const input = req.method === 'PUT' ? await body(req) : {};
+        try { return reply(200, await silverbullet.file(principal.id, page, { method: req.method,
+          content: input.content, etag: input.etag })); }
+        catch (error) {
+          const codes = { invalid_note_path: 400, invalid_note_content: 400, note_conflict: 409, note_not_found: 404, sb_not_ready: 409 };
+          throw new HttpError(codes[error.message] || 502, codes[error.message] ? error.message : 'note_request_failed');
         }
       }
       if (req.method === 'GET' && path === '/api/memory') return reply(200, { content: store.memory(principal.id) });
@@ -128,8 +199,8 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
     }
   });
   server.requestTimeout = 15000; server.headersTimeout = 10000;
-  return { server, queue, async close() {
+  return { server, queue, wechat, async close() {
     const closed = server.listening ? new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())) : Promise.resolve();
-    server.closeIdleConnections(); await queue.close(); await closed; store.close();
+    server.closeIdleConnections(); await wechat?.close(); await queue.close(); await closed; await silverbullet?.close(); store.close();
   } };
 }

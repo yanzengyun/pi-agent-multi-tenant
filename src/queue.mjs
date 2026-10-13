@@ -1,8 +1,11 @@
 import { systemPrompt } from './engine.mjs';
+import { EventEmitter } from 'node:events';
 
-export class RunQueue {
-  constructor(store, engine, { timeoutMs = 120000 } = {}) {
+export class RunQueue extends EventEmitter {
+  constructor(store, engine, { timeoutMs = 120000, contextFactory = () => ({}) } = {}) {
+    super();
     this.store = store; this.engine = engine; this.timeoutMs = timeoutMs;
+    this.contextFactory = contextFactory;
     this.closed = false; this.active = null; this.work = null;
     store.recover();
     this.kick();
@@ -27,6 +30,7 @@ export class RunQueue {
         if (eventCount++ < 500) this.store.trace(run.id, kind, payload);
       };
       const context = {
+        ...this.contextFactory(run.user_id),
         userId: run.user_id, conversation: this.store.conversation(run.user_id, run.conversation_id),
         directory: this.store.directory, signal: controller.signal, emit,
         history: this.store.messages(run.user_id, run.conversation_id),
@@ -52,6 +56,7 @@ export class RunQueue {
         emit('failed', { error, ...(this.engine.sanitize ? { diagnostic: this.engine.sanitize({ message: failure.message }) } : {}) });
       } finally {
         clearTimeout(timer); this.active = null;
+        this.emit('settled', run.id);
       }
     }
   }

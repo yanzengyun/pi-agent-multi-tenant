@@ -46,6 +46,14 @@ export class PiEngine {
         parameters: Type.Object({ content: Type.String({ maxLength: 8000 }) }),
         async execute(_id, { content }) { ctx.writeMemory(content); return result('Memory saved'); } },
     ];
+    if (ctx.notes) customTools.push(
+      { name: 'note_read', label: 'Note Read', description: 'Read a Markdown page from this user’s SilverBullet space. Never accepts another space URL.',
+        parameters: Type.Object({ page: Type.String({ maxLength: 120 }) }),
+        async execute(_id, { page }) { return result(JSON.stringify(await ctx.notes.read(page, ctx.signal))); } },
+      { name: 'note_write', label: 'Note Write', description: 'Write only when the user explicitly asks. For an existing page, first read it and provide its etag; without etag this is create-only.',
+        parameters: Type.Object({ page: Type.String({ maxLength: 120 }), content: Type.String({ maxLength: 30000 }), etag: Type.Optional(Type.String()) }),
+        async execute(_id, { page, content, etag }) { return result(JSON.stringify(await ctx.notes.write(page, content, etag, ctx.signal))); } },
+    );
     if (this.config.searchKey) customTools.push({
       name: 'web_search', label: 'Web Search', description: 'Search public webpages through MiniMax Coding Plan. Send a search query only.',
       parameters: Type.Object({ query: Type.String({ maxLength: 500 }) }),

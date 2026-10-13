@@ -139,12 +139,12 @@ test('run timeout aborts the active engine before the next user is started', asy
   await queue.close(); store.close();
 });
 
-test('expired sessions cannot authenticate and administrator page has no chat UI or fake QR', async t => {
+test('expired sessions cannot authenticate and administrator page has no chat UI or static QR', async t => {
   const { api, admin, store } = await fixture(t);
   store.db.prepare('UPDATE auth_sessions SET expires_at=0 WHERE hash=?').run(tokenHash(admin));
   assert.equal((await api('/api/me', { token: admin })).status, 401);
   const { readFileSync } = await import('node:fs');
   const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
-  assert.match(html, /管理员登录/); assert.match(html, /后续阶段接入/);
+  assert.match(html, /管理员登录/); assert.match(html, /独立测试微信/);
   assert.doesNotMatch(html, /<textarea|qr-code/);
 });
