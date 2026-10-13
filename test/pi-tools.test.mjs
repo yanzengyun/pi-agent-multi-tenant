@@ -7,7 +7,7 @@ import { PiEngine } from '../src/pi-engine.mjs';
 import { RunQueue } from '../src/queue.mjs';
 import { Store } from '../src/store.mjs';
 
-function fixture(t, action) {
+function fixture(t, action, contextFactory) {
   const directory = mkdtempSync(join(tmpdir(), 'pi-tools-'));
   const store = new Store(directory), engine = new PiEngine({ provider: 'fake', model: 'fake' });
   engine.Type = { Object: value => value, String: value => value };
@@ -29,7 +29,7 @@ function fixture(t, action) {
       return { session };
     },
   };
-  const queue = new RunQueue(store, engine);
+  const queue = new RunQueue(store, engine, { contextFactory });
   t.after(async () => { await queue.close(); store.close(); rmSync(directory, { recursive: true, force: true }); });
   return { store, queue };
 }
@@ -85,4 +85,22 @@ test('persona draft SDK runs keep only the read tool', async t => {
   queue.kick(); await settled;
   assert.equal(store.run(user.id, run.id).status, 'completed');
   assert.equal(store.agentProfile(user.id), '');
+});
+
+
+test('SDK cmd is scoped by the queue and cannot grant command access to persona drafts', async t => {
+  const called = [];
+  const {store,queue} = fixture(t, async (tools,prompt) => {
+    const cmd = tools.find(t=>t.name==='cmd');
+    if (prompt==='draft') {assert.equal(cmd,undefined); return 'FAKE_DRAFT';}
+    assert.ok(cmd); await cmd.execute('fake',{command:'printf FAKE',userId:'another-user',socket:'/etc/passwd'});
+    return 'FAKE_OK';
+  }, userId=>({sandbox:{execute:async command=>{called.push({userId,command});return {stdout:'FAKE'};}}}));
+  const user=store.createUser('fake_alice','fake'), conversation=store.createConversation(user.id,'fake');
+  for (const [prompt,mode] of [['command',undefined],['draft','persona_draft']]) {
+    const run=store.createRun(user.id,conversation.id,prompt,mode);
+    const settled=new Promise(resolve=>queue.once('settled',resolve));queue.kick();await settled;
+    assert.equal(store.run(user.id,run.id).status,'completed');
+  }
+  assert.deepEqual(called,[{userId:user.id,command:'printf FAKE'}]);
 });

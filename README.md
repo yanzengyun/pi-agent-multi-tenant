@@ -14,7 +14,7 @@
 - 一个 Pi SDK 服务进程，全局串行执行；持久化队列，上限20条，每用户等待上限5条。
 - 使用原版 Pi SDK 1.1.0 创建独立 `AgentSession`，每次运行完成后释放；按用户保存 JSONL 会话。
 - 显式资源和凭据配置，不发现宿主机的 AGENTS、技能、扩展、默认会话或生产记忆。
-- 只开放当前用户的 `memory_read`、`memory_write`，以及可选 MiniMax 官方 `web_search`；没有宿主机 bash/read/write。
+- 只开放当前用户的 `memory_read`、`memory_write`，以及可选 MiniMax 官方 `web_search`；没有宿主机 bash/read/write；可选cmd在独立沙箱中执行。
 - Trace 保存注入提示词、记忆、SDK消息及工具事件；尚未复用旧 trace 网页，也不宣称已捕获全部原始 HTTP 请求。
 - 管理员可按用户查看最近50次运行，展开提示词、注入记忆、SDK与工具事件、结果和错误；普通用户不能访问管理员接口，错配用户与run ID返回404。
 - 密码 scrypt、会话 token 只存摘要、过期和退出撤销、HttpOnly/SameSite Cookie、请求体与登录并发限制。
@@ -187,7 +187,7 @@ docker ps --filter name=silverbullet-multi-tenant
 
 ## 验证结果
 
-2026-10-13，37项自动测试通过，覆盖认证、权限、跨用户记忆/聊天/run/trace、Origin、请求体限制、串行队列、失败恢复、超时、扫码取消/过期/身份保护、发送者校验、投递重试、重启恢复、管理员trace权限、提醒持久化、时区/日期校验、漏执行合并，以及邀请、用户自助AGENTS隔离、笔记账号改名与丢失响应恢复。
+2026-10-13，43项Node自动测试及5项Python工作区池测试通过，覆盖认证、权限、跨用户记忆/聊天/run/trace、Origin、请求体限制、串行队列、失败恢复、超时、扫码取消/过期/身份保护、发送者校验、投递重试、重启恢复、管理员trace权限、提醒持久化、时区/日期校验、漏执行合并，以及邀请、用户自助AGENTS隔离、笔记账号改名与丢失响应恢复。
 
 独立服务器的真实 Pi SDK 测试已通过：两个虚构用户调用memory_read，返回各自测试代号，系统记忆注入正确；跨用户trace404；恢复SDK历史正确；官方搜索成功。生产个人助手的进程与配置未变，原trace HTTP200。报告见 `test/live-verification.json`，没有私人聊天正文或密钥。
 
@@ -202,3 +202,39 @@ docker ps --filter name=silverbullet-multi-tenant
 后续会话先读 [HANDOFF.md](HANDOFF.md)。
 
 2026-10-13 笔记认证排查：浏览器验证弹窗来自根路径原生认证请求落入管理员Basic网关，其后还有错误的primaryUrl内部地址。修复专用认证路由及公网Origin后，浏览器验收检查整个笔记导航无WWW-Authenticate挑战，登录后实际读取自身index.md成功；后台与个人trace继续401保护。
+
+
+## 命令沙箱与工作区复用池（已上线）
+
+多用户Pi使用cmd工具执行Bash/Python，默认目录为/work，直接联网关闭。time_now负责实时北京时间，人物设定仍由persona_read/write保存并同步用户自己的AGENTS.md，笔记由note工具操作。沙箱的文件目录与Pi的SDK会话/凭据目录分开，不把模型密钥或SB管理账号放进命令环境。
+
+执行服务为pi-sandbox.service，Linux用户pi-sandbox，通过/run/pi-sandbox/runner.sock接受后端请求；主后端仅增加pi-sandbox-client辅助组。无公网沙箱端口，无Docker管理权限。root管理安装，实际用户命令为非root。Ubuntu AppArmor仅为/usr/bin/bwrap增加定向userns策略，未关闭全局限制。
+
+池预建8个128MiB ext4磁盘镜像槽位，约100MiB可用于用户文件；UUID绑定保存在/var/lib/pi-sandbox/slots/owners.json。槽位一旦绑定仅用于该用户，跨命令及执行服务重启保留文件。每次命令创建全新mount/PID/network/user namespace和seccomp环境，复用只读/usr运行依赖及用户持久目录，没有常驻Shell进程池。已测简单命令中位约105ms（前一轮119ms），未把这个值当所有脚本的性能承诺。
+
+磁盘镜像在/opt/pi-sandbox/disks/，通过独立fstab条目启动挂载；执行服务RequiresMountsFor依赖这些卷，未挂载时不启动。耗尽槽位返回sandbox_pool_full，不回退宿主机执行。扩容需一起增加镜像/挂载、调整安装脚本与PI_SANDBOX_POOL_SIZE，不能只增大环境数字。
+
+全局最多1条命令，单任务192MiB内存、0.5CPU、64进程、30秒、原始stdout/stderr合计32KiB；整个执行服务256MiB内存上限。超时、取消和输出超限杀掉任务cgroup，防止遗留子进程。只读系统依赖，命令环境变量清空后按允许列表设置，socket/ptrace/新增namespace/io_uring等受seccomp限制。Bubblewrap仍共享宿主机内核，扩大到陌生用户任意代码前评估gVisor或独立执行节点。
+
+首次安装与启用顺序：
+
+```sh
+python3 scripts/deploy-sandbox.py
+# 将verify-sandbox.py在服务器运行，先验收隔离和资源限制。
+python3 scripts/enable-sandbox.py
+python3 scripts/update-live.py
+```
+
+安装/更新执行服务需确认无沙箱任务；update-live还会确认模型队列空闲、备份原状态并检查个人Pi不变。deploy-sandbox只控制独立执行服务，不重启个人Pi、SilverBullet或Docker。后端更新失败会恢复原代码；独立沙箱及其卷不随代码回滚删除。若只停用cmd，移除主服务10-sandbox.conf中的socket环境变量并在队列空闲时重启多用户后端，保留磁盘数据。
+
+运维：
+
+```sh
+systemctl status pi-sandbox pi-multi-tenant
+journalctl -u pi-sandbox --no-pager -n 30
+sudo curl --unix-socket /run/pi-sandbox/runner.sock -H 'Content-Type: application/json' -d '{}' http://localhost/status
+```
+
+备份时等沙箱空闲并停止执行服务，然后备份owners.json及各slot/work文件目录（保留符号链接、不跟随链接），配合助手SQLite和各用户SDK目录备份。恢复到同规格空槽位，保留UUID到槽位映射、恢复目录属主pi-sandbox，再启动执行服务。迁移时保留当前助手目录路径，改变路径还需调整SDK会话路径映射。运行中直接复制挂载着的磁盘镜像不作为一致性备份方式。
+
+真实验收：verify-sandbox.py测试文件复用、用户隔离、网络/宿主机密钥不可访问、符号链接、内存/磁盘/输出上限、超时和取消及子进程清理；verify-user-sandbox.mjs用普通合成账号验证模型调用time_now、persona_read/write和cmd，并清理测试账号/Space/槽位。真实服务重启后文件复用和二进制输出传输也通过。报告见test/sandbox-live-verification.json。所有测试未通过真实微信发送消息。

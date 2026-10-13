@@ -29,7 +29,7 @@ digest=hashlib.sha256(json.dumps(before).encode()).hexdigest();c.close()
 (backup/'identity-hash.txt').write_text(digest)
 base=Path('/home/admin/pi-agent-multi-tenant-live')
 with tarfile.open(backup/'code.tar.gz','w:gz') as tar:
- for name in ['src','public','scripts','README.md','HANDOFF.md']:
+ for name in ['src','public','scripts','sandbox','docs','README.md','HANDOFF.md']:
   if (base/name).exists():tar.add(base/name,arcname=name)
 route=Path('/etc/nginx/pi-app-routes.d/pi-multi-tenant.conf')
 (backup/'nginx.conf').write_text(route.read_text())
@@ -46,7 +46,7 @@ except Exception:
     raise
 archive=io.BytesIO()
 with tarfile.open(fileobj=archive,mode='w:gz') as tar:
-    for name in ['src','public','scripts','test','README.md','HANDOFF.md']:tar.add(root/name,arcname=name)
+    for name in ['src','public','scripts','sandbox','docs','test','README.md','HANDOFF.md']:tar.add(root/name,arcname=name)
 try:
     subprocess.run(ssh+['tar -xzf - -C /home/admin/pi-agent-multi-tenant-live; chown -R admin:admin /home/admin/pi-agent-multi-tenant-live'],input=archive.getvalue(),check=True)
     finish=r'''

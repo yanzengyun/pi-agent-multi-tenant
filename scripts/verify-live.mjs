@@ -61,6 +61,18 @@ try {
   const timeEvents=(await api(`/api/runs/${timeRun.id}/trace`,token)).data.events;
   assert.ok(timeEvents.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName==='time_now'));
   report.real_time_tool=true;
+  const cmdRun=(await api(`/api/conversations/${c.id}/runs`,token,'POST',{prompt:'请在自己的沙箱里运行 python3 -c "print(\'FAKE_CMD_OK\')"，实际执行后回复输出。'})).data;
+  let cmdResult;
+  for(let i=0;i<130;i++) {
+    cmdResult=(await api('/api/runs/'+cmdRun.id,token)).data;
+    if(!['queued','running'].includes(cmdResult.status))break;
+    await new Promise(r=>setTimeout(r,1000));
+  }
+  assert.equal(cmdResult.status,'completed');assert.match(cmdResult.response,/FAKE_CMD_OK/);
+  const cmdEvents=(await api(`/api/runs/${cmdRun.id}/trace`,token)).data.events;
+  assert.ok(cmdEvents.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName==='cmd'));
+  report.real_sandbox_cmd=true;
+
 } finally {
   probe.setAgentProfile(auth.data.user.id, oldProfile); probe.close();
   await api('/api/memory', token, 'PUT', { content: oldMemory }); await api('/api/logout', token, 'POST', {});

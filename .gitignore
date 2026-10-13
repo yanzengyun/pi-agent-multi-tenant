@@ -9,3 +9,5 @@ node_modules/
 *.pem
 *.key
 coverage/
+
+__pycache__/

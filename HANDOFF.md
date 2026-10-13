@@ -9,19 +9,28 @@
 - 用户已要求开始开发，并指定GitHub仓库 https://github.com/yanzengyun/pi-agent-multi-tenant.git 上传代码。
 - 当前个人助手必须保持可用。没有授权把真实用户状态迁入开发环境；测试仅用虚构用户。
 
+## 最新上线：轻量命令沙箱与复用池（2026-10-13）
+
+- 用户授权按推荐方案开发，允许合适的池复用。已上线Bubblewrap独立runner及cmd；c0051ca时间/persona修复同时已部署。真实模型和普通合成用户均调用time_now、persona_read/write、cmd成功；未发真实微信消息、未改Lucy的设定/密码。原个人Pi PID2985保持不变。
+- 进程每次新建隔离环境，复用8个UUID独占的128MiB磁盘镜像工作槽位与只读运行依赖；每槽实际可用约100MiB，跨命令及服务重启保留文件。没有跨用户进程复用或常驻Shell池，简单命令中位约105ms（前一轮119ms）。池上限包括验收appadmin已占1槽，普通合成账号已清理。
+- pi-sandbox.service以pi-sandbox用户运行，socket/run/pi-sandbox/runner.sock，仅后端通过pi-sandbox-client组连接。源码/opt/pi-sandbox/code，磁盘/opt/pi-sandbox/disks，挂载/var/lib/pi-sandbox/slots，owners.json绑定用户。主服务drop-in/etc/systemd/system/pi-multi-tenant.service.d/10-sandbox.conf。未给Pi Docker权限。
+- AppArmor为bwrap定向授予userns，全局apparmor_restrict_unprivileged_userns仍为1。seccomp与namespace限制读取/写入、socket、ptrace/新增namespace/io_uring；默认离线。任务192MiB/0.5CPU/64PID/30s/32KiB原始输出，执行服务256MiB，结束杀整个任务cgroup。不回退宿主机执行。
+- 43项Node测试和5项池测试通过；真实资源/隔离/取消/超时/重启/普通用户模型验收见test/sandbox-live-verification.json、test/live-readiness.json。发现并修复清理符号链接时提前stat不可访问目标的问题，防泄漏与脏槽复用；二进制输出JSON膨胀也已覆盖。
+- 更新脚本备份增加sandbox/docs目录；首次安装deploy-sandbox.py，验证后enable-sandbox.py再update-live.py。最后代码更新备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261013-233555。安装脚本运行会短暂重启独立执行服务，需等无任务。备份/扩容/恢复见README。
+
 ## 最新调研：Vibe 与轻量沙箱（2026-10-13）
 
-- 移动端联网问题已解决，用户重启服务并勾选联网后root SSH成功；不能继续说当前会话禁网。Lucy时间和agent.md补丁c0051ca仍待上线。
+- 移动端联网问题已解决，用户重启服务并勾选联网后root SSH成功；不能继续说当前会话禁网。该调研时Lucy时间和agent.md补丁c0051ca待上线，现已随沙箱上线。
 - 用户要求了解Vibe容器原理及轻量沙箱，已只读检查本会话Docker cgroup、NoNewPrivs/seccomp及挂载，阅读移动端身份映射/socket复用代码；未确认每Vibe用户是否独占容器。
-- Alibaba2CPU/1613MiB、available约665MiB；cgroupv2，userns开启但AppArmor限制=1；无/dev/kvm和已装bwrap/nsjail/runsc。方案文档docs/sandbox-research.md，首选按命令Bubblewrap+资源控制的原型，NsJail/SRT备选，陌生用户扩大前评估gVisor。未安装或启动新沙箱。
+- Alibaba2CPU/1613MiB、available约665MiB；cgroupv2，userns开启但AppArmor限制=1；该调研时无/dev/kvm，未安装bwrap/nsjail/runsc。方案文档docs/sandbox-research.md，首选按命令Bubblewrap+资源控制的原型，NsJail/SRT备选，陌生用户扩大前评估gVisor。该调研阶段未安装沙箱；后续已按上文方案上线。
 - pi-safe默认全盘可读且网络不限制，不能当多租户隔离。Lite执行器必须同时阻断跨用户读取、写入、网络、进程/socket访问，并控制整组子进程资源；不得因沙箱失败自动退回宿主机命令。
 
-## 待上线修复：查询时间与 agent.md 自助修改（2026-10-13）
+## 历史：查询时间与 agent.md 自助修改（已上线）（2026-10-13）
 
 - 用户反馈Lucy无cmd，无法查时间或改自己的agent.md。通用cmd/bash原本不开放；此阶段共用Linux admin，不能直接开宿主机命令。生产Lucy实际trace尚未读取，不能断言是缺工具还是模型拒绝。
 - 本地增加零参数time_now，返回UTC及北京时间；系统提示和persona工具描述明确agent.md/AGENTS.md是自己的人物设定，通过persona_read/write保存，不依赖命令工具。旧会话拒绝不应覆盖当前工具清单。
 - 新增test/pi-tools.test.mjs，通过SDK适配器与真实队列/Store验证查时间、自己配置保存/镜像、跨用户不能修改以及草稿只读，3项通过。测试使用模拟SDK模型，不代表生产Lucy或真实模型验收。
-- 此补丁开发时移动端禁止网络socket，SSH报Operation not permitted；后已修复移动联网并验证root SSH。c0051ca尚未部署或推送。verify-live.mjs补充自然语言agent.md与时间请求验收，上线后执行，不应把待验收写为已通过。
+- 此补丁开发时移动端禁止网络socket，SSH报Operation not permitted；后已修复移动联网并验证root SSH。c0051ca现已部署，verify-live.mjs自然语言agent.md与时间请求验收已通过，另通过普通合成用户验收。
 
 ## 当前补充：笔记认证修复与人物设定AI（2026-10-13）
 

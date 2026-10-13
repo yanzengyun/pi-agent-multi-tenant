@@ -30,7 +30,7 @@ async function body(req) {
 }
 
 export async function makeServer({ store, engine, adminPassword, secureCookies = false, origin, timeoutMs,
-  wechatClient, wechatOptions, silverbullet, basePath = '' }) {
+  wechatClient, wechatOptions, silverbullet, sandbox, basePath = '' }) {
   if (basePath && !/^\/[a-zA-Z0-9_-]+$/.test(basePath)) throw new Error('Invalid base path');
   if (!store.users().some(user => user.role === 'admin')) {
     text(adminPassword, 256);
@@ -39,7 +39,7 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
   }
   const dummyPassword = await hashPassword(randomBytes(32).toString('hex'));
   const reminders = new Reminders(store, () => { void wechat?.flush(); });
-  const queue = new RunQueue(store, engine, { timeoutMs, contextFactory: userId => ({ notes: silverbullet?.tools(userId), reminders: reminders.tools(userId) }) });
+  const queue = new RunQueue(store, engine, { timeoutMs, contextFactory: userId => ({ notes: silverbullet?.tools(userId), reminders: reminders.tools(userId), sandbox: sandbox?.tools(userId) }) });
   const wechat = wechatClient && new WechatManager(store, wechatClient, { ...wechatOptions, onMessage: () => queue.kick() });
   if (wechat) { queue.on('settled', () => { void wechat.flush(); }); wechat.start(); }
   reminders.start();

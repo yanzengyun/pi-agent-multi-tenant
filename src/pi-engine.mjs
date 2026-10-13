@@ -59,6 +59,12 @@ export class PiEngine {
         parameters: Type.Object({ content: Type.String({ maxLength: 8000 }) }),
         async execute(_id, { content }) { ctx.writeAgentProfile(content); return result('人物设定已保存，后续对话生效。'); } },
     );
+    if (ctx.sandbox) customTools.push({
+      name: 'cmd', label: 'Sandbox Command',
+      description: '在当前用户独立的离线沙箱中执行Bash/Python命令。/work是自己的持久工作目录；不能访问宿主机、其他用户、模型密钥或网络。单次最多30秒，输出有限；修改人物设定用persona工具、笔记用note工具。不要声称沙箱命令能管理服务器。',
+      parameters: Type.Object({ command: Type.String({ maxLength: 8000 }) }),
+      async execute(_id, { command }) { return result(JSON.stringify(await ctx.sandbox.execute(command, ctx.signal))); },
+    });
     if (ctx.notes) customTools.push(
       { name: 'note_read', label: 'Note Read', description: 'Read a Markdown page from this user’s SilverBullet space. Never accepts another space URL.',
         parameters: Type.Object({ page: Type.String({ maxLength: 120 }) }),

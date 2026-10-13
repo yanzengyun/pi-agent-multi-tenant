@@ -1,0 +1,22 @@
+{
+  "workspace_reuse_and_cross_user_isolation": true,
+  "network_and_host_secrets_blocked": true,
+  "symlink_escape_blocked": true,
+  "output_limit": true,
+  "memory_limit": true,
+  "disk_limit": true,
+  "cancellation": true,
+  "cancel_before_start": true,
+  "timeout": true,
+  "background_children_cleaned": true,
+  "no_residual_task_cgroups": true,
+  "real_restart_preserves_workspace": true,
+  "binary_output_transport_bounded": true,
+  "median_command_ms": 105,
+  "capacity": 8,
+  "memory_limit_mib": 192,
+  "disk_image_mib": 128,
+  "network": false,
+  "process_limit": true,
+  "previous_median_command_ms": 119
+}

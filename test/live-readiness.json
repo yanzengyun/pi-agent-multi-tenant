@@ -1,5 +1,5 @@
 {
-  "automated_tests": 37,
+  "automated_tests": 43,
   "real_model_memory_tool": true,
   "reminder_tools_loaded": true,
   "live_silverbullet_isolation": true,
@@ -26,5 +26,12 @@
   "unified_note_password_rotation": true,
   "native_login_without_basic_challenge": true,
   "ai_draft_read_only": true,
-  "real_persona_tools": true
+  "real_persona_tools": true,
+  "sandbox_pool_tests": 5,
+  "real_time_tool": true,
+  "real_sandbox_cmd": true,
+  "ordinary_user_time": true,
+  "ordinary_user_agent_md_saved": true,
+  "ordinary_user_sandbox_cmd": true,
+  "sandbox_restart_persistence": true
 }
