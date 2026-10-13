@@ -9,6 +9,12 @@
 - 用户已要求开始开发，并指定GitHub仓库 https://github.com/yanzengyun/pi-agent-multi-tenant.git 上传代码。
 - 当前个人助手必须保持可用。没有授权把真实用户状态迁入开发环境；测试仅用虚构用户。
 
+## 独立AMR气泡实验（2026-10-14）
+
+- 用户明确要求测试GitHub pi-connect的AMR候选。新增scripts/voice-probe，源码复现FILE上传/type3 VOICE消息，encode_type0因omitempty不发，playtime不发，AES base64(hex)，encrypt_type1。
+- 服务器仅安装libopencore-amrnb0（183KB），未重启任何服务。独立目录/home/admin/.local/share/pi-voice-probe，不新建微信登录或轮询器；现有插件保持。
+- Python3.12 OpenCORE AMR-NB编码/解码自测通过：1秒50帧1606字节且解码有非零能量。真实发信等待用户在Lucy发送新“AMR测试”刷新上下文；已通过异步问题请求，未获回复/新消息前不发。成功条件必须由用户确认可播放的气泡，不能仅看API接受。
+
 ## 女声与主账号接入（2026-10-14）
 
 - 用户确认Lucy已收到MP3，但需要下载，要求继续查原生气泡、改女声、原主账号上线。默认音色改为官方female-tianmei（甜美女性），ASSISTANT_TTS_VOICE可配置；保持现有key，默认文字与按需音频。
