@@ -9,12 +9,19 @@
 - 用户已要求开始开发，并指定GitHub仓库 https://github.com/yanzengyun/pi-agent-multi-tenant.git 上传代码。
 - 当前个人助手必须保持可用。没有授权把真实用户状态迁入开发环境；测试仅用虚构用户。
 
+## 最新调研：Vibe 与轻量沙箱（2026-10-13）
+
+- 移动端联网问题已解决，用户重启服务并勾选联网后root SSH成功；不能继续说当前会话禁网。Lucy时间和agent.md补丁c0051ca仍待上线。
+- 用户要求了解Vibe容器原理及轻量沙箱，已只读检查本会话Docker cgroup、NoNewPrivs/seccomp及挂载，阅读移动端身份映射/socket复用代码；未确认每Vibe用户是否独占容器。
+- Alibaba2CPU/1613MiB、available约665MiB；cgroupv2，userns开启但AppArmor限制=1；无/dev/kvm和已装bwrap/nsjail/runsc。方案文档docs/sandbox-research.md，首选按命令Bubblewrap+资源控制的原型，NsJail/SRT备选，陌生用户扩大前评估gVisor。未安装或启动新沙箱。
+- pi-safe默认全盘可读且网络不限制，不能当多租户隔离。Lite执行器必须同时阻断跨用户读取、写入、网络、进程/socket访问，并控制整组子进程资源；不得因沙箱失败自动退回宿主机命令。
+
 ## 待上线修复：查询时间与 agent.md 自助修改（2026-10-13）
 
 - 用户反馈Lucy无cmd，无法查时间或改自己的agent.md。通用cmd/bash原本不开放；此阶段共用Linux admin，不能直接开宿主机命令。生产Lucy实际trace尚未读取，不能断言是缺工具还是模型拒绝。
 - 本地增加零参数time_now，返回UTC及北京时间；系统提示和persona工具描述明确agent.md/AGENTS.md是自己的人物设定，通过persona_read/write保存，不依赖命令工具。旧会话拒绝不应覆盖当前工具清单。
 - 新增test/pi-tools.test.mjs，通过SDK适配器与真实队列/Store验证查时间、自己配置保存/镜像、跨用户不能修改以及草稿只读，3项通过。测试使用模拟SDK模型，不代表生产Lucy或真实模型验收。
-- 当前会话权限禁止网络socket，SSH报Operation not permitted；此修改尚未部署或推送，生产仍是6f5001f。全量HTTP测试受同一限制无法监听端口。verify-live.mjs补充自然语言agent.md与时间请求验收，待网络恢复后执行，不应把待验收写为已通过。
+- 此补丁开发时移动端禁止网络socket，SSH报Operation not permitted；后已修复移动联网并验证root SSH。c0051ca尚未部署或推送。verify-live.mjs补充自然语言agent.md与时间请求验收，上线后执行，不应把待验收写为已通过。
 
 ## 当前补充：笔记认证修复与人物设定AI（2026-10-13）
 
