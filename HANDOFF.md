@@ -9,6 +9,12 @@
 - 用户已要求开始开发，并指定GitHub仓库 https://github.com/yanzengyun/pi-agent-multi-tenant.git 上传代码。
 - 当前个人助手必须保持可用。没有授权把真实用户状态迁入开发环境；测试仅用虚构用户。
 
+## 后续语音方案调研（2026-10-14）
+
+- 用户要求继续探索。直接读取npm最新版2.4.10发布包，音频仍走FILE，无新增原生VOICE发送实现；issue209曾成功后失败、issue290的10月3日反馈VOICE不呈现均是用户证据，不能当腾讯根因确认。另一个Go SDK的SendVoice只有载荷实现，未找到真机成功证明，不盲目换插件。
+- 已用urllib实际读取腾讯微信客服官方94677/90253文档：明确voice/media_id，AMR≤2MB/60秒；回复窗口48小时/5条，需客服接待状态和应用权限，也有发送失败事件。这是值得隔离验证的新通道，需企业微信客服账号/应用/回调配置；用户进入新的客服会话，不是现有ClawBot原地升级。没有该通道凭据，未真实发送、未声称已可用。
+- 方案与接入/验证条件见docs/wechat-voice-options.md。最小体验改善是有期限私有网页播放链接，无需另开容器，但并非原生气泡；本轮只完成调研与文档，没有实现/部署页面、新通道，也没有发测试消息或重启服务。生产女声MP3保持。
+
 ## 独立AMR气泡实验（2026-10-14）
 
 - 用户明确要求测试GitHub pi-connect的AMR候选。新增scripts/voice-probe，源码复现FILE上传/type3 VOICE消息，encode_type0因omitempty不发，playtime不发，AES base64(hex)，encrypt_type1。
