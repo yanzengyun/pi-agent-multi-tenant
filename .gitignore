@@ -16,3 +16,12 @@ __pycache__/
 docs/private-backups/
 /silverbullet.json
 /silverbullet-data/
+
+# Private authentication files must stay outside the source history.
+auth.json
+credentials.json
+login.json
+githup_token
+.git-credentials*
+.aistudio_token
+.whale_token

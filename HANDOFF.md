@@ -2,6 +2,13 @@
 
 更新时间：2026-10-14。
 
+## 完全开源与真实凭据核查（2026-10-14）
+
+- 用户明确要求完全开源并核对密钥/key是否上传。GitHub API确认仓库已public、默认main，之前license为null；本轮加入MIT LICENSE及package/package-lock许可证元信息，README移除“未指定”并链接许可证，依赖不变。没有改变仓库可见性或生产服务。
+- 从GitHub重新mirror，快照84f1d22、29提交、290源码/提交对象；当前9项实际凭据HMAC比对无匹配，随后将公开源码对象送到服务器内存，与实际私有值逐字比对，7项服务器凭据及本机GitHub/登录凭据均无匹配；SSH私钥内容/文件头无匹配，私有配置/数据库/README备份路径在历史中均未发现。没有输出实际值或凭据指纹。
+- Gitleaks官方二进制下载超时，改用官方Docker镜像v8.30.1，摘要c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f；断网临时容器扫描完整Git历史，退出码0、findings空。报告在/tmp私有保存；公开docs/security-audit.md只记录安全摘要。已补auth.json/credentials.json/login.json/githup_token等忽略规则，.env.example保留空配置/占位示例。
+- 历史和特化脚本仍含生产IP、用户/文件路径等部署元数据，它们不是实际凭据；没有改写历史或强推。源码当前没有发现真实密钥上传，不能说“所有个人元数据均已清除”。LICENSE/diff/JSON元信息校验通过，无依赖或生产行为变化；提交后再扫描包含本轮开源改动的历史，收尾同步GitHub和服务器并核对MIT识别。
+
 ## README 面向开源整理与页面截图（2026-10-14）
 
 - 用户要求备份原README、改成面向开源的介绍，突出微信扫码、人与助手共享笔记、多租户管理并展示管理/邀请/个人/扫码页面。旧README逐字备份到本机docs/private-backups/README.production-20261014-151934.md（600，已gitignore），服务器另存私有documentation-backups。新版README不含真实生产IP/账号凭据路径，通用部署使用example域名；没有修改许可证或仓库可见性，README如实注明许可证尚未指定。

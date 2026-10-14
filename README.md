@@ -147,7 +147,7 @@ ASSISTANT_TTS=on
 - 提醒支持一次性和每日文本投递；定时模型复盘与复杂周期尚未实现。
 - 命令沙箱默认预建 8 个持久工作区，每个约 100MiB 可用；名额可扩容，并非注册用户总数限制。单次执行最多 30 秒、192MiB 内存，直接联网关闭。
 - 目前适合从少量受邀用户开始；并发、容量、长期重连与资源配额需按实际负载验证。
-- 后续方向：通用一键部署、用户计量与配额、更多模型和工具适配。开源许可证尚未指定。
+- 后续方向：通用一键部署、用户计量与配额、更多模型和工具适配。
 
 ## 开发与文档
 
@@ -158,9 +158,14 @@ python3 -m unittest discover -s sandbox -p 'test_*.py'
 
 - [部署、配置、备份与迁移](docs/deployment.md)
 - [页面截图说明与重新生成](docs/screenshots.md)
+- [仓库凭据检查记录](docs/security-audit.md)
 - [轻量沙箱调研与设计](docs/sandbox-research.md)
 - [微信语音现状](docs/wechat-voice-options.md)
 
 技术栈：Node.js、原生 SQLite、Pi SDK、SilverBullet、Bubblewrap（可选）。仓库中的 `scripts/deploy-*` 保留既有环境的运维脚本，使用前必须调整目标地址、账号和路径；通用部署以文档为准。
 
 `.env`、数据库、会话、凭据和生产文档备份不应进入源码仓库。
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE)。依赖组件保留各自的许可证。
