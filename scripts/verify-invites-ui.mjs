@@ -59,7 +59,7 @@ try {
   await member.locator('#notes-form input[name=username]').fill(notesUsername);
   await member.locator('#notes-form input[name=password]').fill(notesPassword);
   await member.locator('#notes-form button').click();
-  await member.getByText('笔记已更新，密码与主页一致，原笔记保留。', { exact: true }).waitFor({ timeout: 60000 });
+  await member.getByText('笔记已更新，密码仍与主页一致，无需单独设置。', { exact: true }).waitFor({ timeout: 60000 });
   await member.locator('#notes-link').waitFor({ state: 'visible' });
   const notesUrl = await member.locator('#notes-link').getAttribute('href');
   const details = await admin.request.post(login.url + 'api/admin/users/' + user.id + '/silverbullet/credentials', { data: {} });

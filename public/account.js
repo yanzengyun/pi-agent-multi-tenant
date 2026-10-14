@@ -60,8 +60,11 @@ async function loadAccount(refreshProfile = true) {
   $('#notes-state').textContent = statuses[data.silverbullet.status] || data.silverbullet.status;
   $('#notes-form input[name=username]').value = data.silverbullet.username || data.user.username;
   $('#notes-login-help').textContent = data.silverbullet.passwordUnified
-    ? `笔记账号：${data.silverbullet.username || data.user.username}；密码与个人主页一致。`
-    : '请在笔记设置中验证当前账号密码，完成笔记密码同步。';
+    ? `笔记账号：${data.silverbullet.username || data.user.username}。默认使用主页密码，无需单独设置。`
+    : '旧账号的笔记密码尚未同步。输入当前主页密码验证一次，即可共用密码。';
+  $('#notes-settings-title').textContent = data.silverbullet.passwordUnified ? '修改笔记用户名' : '同步旧账号的笔记登录';
+  $('#notes-save').textContent = data.silverbullet.passwordUnified ? '验证并保存用户名' : '验证并同步笔记';
+  $('#notes-settings').hidden = data.silverbullet.status === 'disabled';
   if (refreshProfile) $('#notes-settings').open = data.silverbullet.status !== 'disabled' && !data.silverbullet.passwordUnified;
   $('#notes-link').hidden = !data.silverbullet.url;
   if (data.silverbullet.url) $('#notes-link').href = data.silverbullet.url;
@@ -97,7 +100,7 @@ onForm('#persona-assist-form', async data => {
 });
 onForm('#notes-form', async data => {
   await api('/api/account/silverbullet/login', 'POST', data); $('#notes-form input[name=password]').value = '';
-  notice('笔记已更新，密码与主页一致，原笔记保留。'); await loadAccount(false);
+  await loadAccount(false); $('#notes-settings').open = false; notice('笔记已更新，密码仍与主页一致，无需单独设置。');
 });
 onForm('#password-form', async data => {
   confirmPassword(data);
