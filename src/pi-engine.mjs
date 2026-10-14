@@ -40,12 +40,6 @@ export class PiEngine {
     const Type = this.Type;
     const result = text => ({ content: [{ type: 'text', text }], details: {} });
     const customTools = [
-      { name: 'time_now', label: 'Current Time', description: '查询服务器当前日期和时间，返回 UTC 和北京时间（Asia/Shanghai）。无需 cmd/bash。',
-        parameters: Type.Object({}), async execute() {
-          const now = new Date();
-          return result(JSON.stringify({ utc: now.toISOString(), timezone: 'Asia/Shanghai',
-            local: new Date(now.getTime() + 8 * 3600000).toISOString().replace('Z', '+08:00') }));
-        } },
       { name: 'memory_read', label: 'Memory Read', description: 'Read only the authenticated user’s persistent memory.',
         parameters: Type.Object({}), async execute() { return result(ctx.memory()); } },
       { name: 'memory_write', label: 'Memory Write', description: 'Replace the authenticated user’s memory; preserve existing relevant facts.',

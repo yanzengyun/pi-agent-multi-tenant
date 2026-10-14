@@ -59,8 +59,9 @@ try {
   }
   assert.equal(timeResult.status,'completed');
   const timeEvents=(await api(`/api/runs/${timeRun.id}/trace`,token)).data.events;
-  assert.ok(timeEvents.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName==='time_now'));
-  report.real_time_tool=true;
+  assert.ok(timeEvents.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName==='cmd'));
+  assert.ok(timeEvents.some(e=>e.kind==='context' && !e.payload.activeTools.includes('time_now')));
+  report.real_time_via_cmd=true;
   const cmdRun=(await api(`/api/conversations/${c.id}/runs`,token,'POST',{prompt:'请在自己的沙箱里运行 python3 -c "print(\'FAKE_CMD_OK\')"，实际执行后回复输出。'})).data;
   let cmdResult;
   for(let i=0;i<130;i++) {

@@ -30,7 +30,7 @@
 - 用户自助设置笔记用户名，主页与笔记使用同一密码，改名保留原Space、Agent token和笔记。用户自设的笔记密码不在应用数据库保留明文，管理员页面不再展示其密码。新注册时笔记密码同步为主页密码；修改主页密码同步修改笔记密码，失败时保留主页旧密码。旧用户在自助页面验证主页密码后主动统一，普通登录不重置原笔记密码。
 - 每用户人物设定（底层AGENTS.md，最多8000字符），数据库为配置来源，镜像写入 `tenants/<uuid>/workspace/AGENTS.md`，后续模型请求显式注入并进入trace。手工修改镜像文件不等于修改配置；不发现宿主机AGENTS、技能或扩展，工具权限不变。
 
-- 查询当前日期或时间使用专用 `time_now`，返回UTC和北京时间。多用户后端不开放宿主机cmd/bash；`agent.md`、`AGENTS.md`和人物设定均由固定当前用户的persona工具读写，无需通用文件权限。
+- 查询当前日期或时间通过沙箱 `cmd` 执行 `TZ=Asia/Shanghai date`，默认北京时间。多用户后端不开放宿主机cmd/bash；`agent.md`、`AGENTS.md`和人物设定均由固定当前用户的persona工具读写，无需通用文件权限。
 - 人物设定可手动编辑或由网页AI生成草稿后确认保存；草稿运行只开放persona_read，禁止写记忆、笔记、提醒和设定。微信明确要求修改时可调用persona_read/write，固定到当前用户。
 
 ## 仍需实现
@@ -224,7 +224,7 @@ docker ps --filter name=silverbullet-multi-tenant
 
 ## 命令沙箱与工作区复用池（已上线）
 
-多用户Pi使用cmd工具执行Bash/Python，默认目录为/work，直接联网关闭。time_now负责实时北京时间，人物设定仍由persona_read/write保存并同步用户自己的AGENTS.md，笔记由note工具操作。沙箱的文件目录与Pi的SDK会话/凭据目录分开，不把模型密钥或SB管理账号放进命令环境。
+多用户Pi使用cmd工具执行Bash/Python，默认目录为/work，直接联网关闭。当前日期和北京时间通过cmd运行date查询，不再提供time_now；人物设定仍由persona_read/write保存并同步用户自己的AGENTS.md，笔记由note工具操作。沙箱的文件目录与Pi的SDK会话/凭据目录分开，不把模型密钥或SB管理账号放进命令环境。
 
 执行服务为pi-sandbox.service，Linux用户pi-sandbox，通过/run/pi-sandbox/runner.sock接受后端请求；主后端仅增加pi-sandbox-client辅助组。无公网沙箱端口，无Docker管理权限。root管理安装，实际用户命令为非root。Ubuntu AppArmor仅为/usr/bin/bwrap增加定向userns策略，未关闭全局限制。
 
@@ -255,7 +255,7 @@ sudo curl --unix-socket /run/pi-sandbox/runner.sock -H 'Content-Type: applicatio
 
 备份时等沙箱空闲并停止执行服务，然后备份owners.json及各slot/work文件目录（保留符号链接、不跟随链接），配合助手SQLite和各用户SDK目录备份。恢复到同规格空槽位，保留UUID到槽位映射、恢复目录属主pi-sandbox，再启动执行服务。迁移时保留当前助手目录路径，改变路径还需调整SDK会话路径映射。运行中直接复制挂载着的磁盘镜像不作为一致性备份方式。
 
-真实验收：verify-sandbox.py测试文件复用、用户隔离、网络/宿主机密钥不可访问、符号链接、内存/磁盘/输出上限、超时和取消及子进程清理；verify-user-sandbox.mjs用普通合成账号验证模型调用time_now、persona_read/write和cmd，并清理测试账号/Space/槽位。真实服务重启后文件复用和二进制输出传输也通过。报告见test/sandbox-live-verification.json。所有测试未通过真实微信发送消息。
+真实验收：verify-sandbox.py测试文件复用、用户隔离、网络/宿主机密钥不可访问、符号链接、内存/磁盘/输出上限、超时和取消及子进程清理；verify-user-sandbox.mjs用普通合成账号验证模型通过cmd查询时间、调用persona_read/write和运行Python，并清理测试账号/Space/槽位。真实服务重启后文件复用和二进制输出传输也通过。报告见test/sandbox-live-verification.json。所有测试未通过真实微信发送消息。
 
 
 ## 微信语音回复部署与验证

@@ -23,7 +23,7 @@ try {
   const auth=await api('/api/login',null,'POST',{username,password});
   const conversation=await api('/api/conversations',auth.token,'POST',{title:'合成普通用户沙箱验收'});
   const run=await api('/api/conversations/'+conversation.id+'/runs',auth.token,'POST',{
-    prompt:'这是虚构验收。请查询现在北京时间，修改你自己的agent.md为“FAKE_USER_STYLE：默认中文简短回复”，实际保存；然后在自己的沙箱中运行 python3 -c "print(12345)" 并回复输出。'});
+    prompt:'这是虚构验收。请用cmd执行 TZ=Asia/Shanghai date 查询现在北京时间，修改你自己的agent.md为“FAKE_USER_STYLE：默认中文简短回复”，实际保存；然后在自己的沙箱中运行 python3 -c "print(12345)" 并回复输出。'});
   let result;
   for(let i=0;i<130;i++) {
     result=await api('/api/runs/'+run.id,auth.token);
@@ -32,12 +32,15 @@ try {
   }
   assert.equal(result.status,'completed');
   const events=(await api('/api/runs/'+run.id+'/trace',auth.token)).events;
-  for(const name of ['time_now','persona_read','persona_write','cmd']) {
+  for(const name of ['persona_read','persona_write','cmd']) {
     assert.ok(events.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName===name),'Missing '+name);
   }
+  assert.ok(events.some(e=>e.kind==='context' && !e.payload.activeTools.includes('time_now')));
+  assert.ok(events.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName==='cmd' &&
+    /\bdate\b/.test(e.payload.args.command)), 'Missing real time command');
   assert.match(store.agentProfile(user.id),/FAKE_USER_STYLE/);
   assert.match(result.response,/12345/);
-  console.log(JSON.stringify({ordinary_user_time:true,ordinary_user_agent_md_saved:true,ordinary_user_sandbox_cmd:true,tool_trace_verified:true}));
+  console.log(JSON.stringify({ordinary_user_time_via_cmd:true,dedicated_time_tool_removed:true,ordinary_user_agent_md_saved:true,ordinary_user_sandbox_cmd:true,tool_trace_verified:true}));
 } finally {
   if(user) {
     const row=store.userById(user.id);

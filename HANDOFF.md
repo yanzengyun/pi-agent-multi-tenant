@@ -2,6 +2,18 @@
 
 更新时间：2026-10-14。
 
+## 移除专用查时间工具（2026-10-14，已上线）
+
+- 用户要求已有cmd即可查时间，移除多用户SDK的time_now；系统提示改为用cmd执行TZ=Asia/Shanghai date，未配置沙箱时只参考本轮提示时间。更新原工具测试及真实模型验收脚本，不改变沙箱权限、其他12个工具或个人主账号插件。
+- 本地62项Node测试通过。普通用户没有StockClaw/行情/持仓专用工具，也不加载主账号投资扩展；web_search仍可检索公开股票信息，此次没有封禁股票话题。
+- 已经scripts/update-live.py在空闲时部署，备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261014-141503；现有用户/微信绑定摘要和原个人PID2985保持。verify-user-sandbox.mjs独立synthetic普通用户真实模型验证cmd实际执行date、persona_read/write保存及Python输出通过，context确认time_now缺席；测试账号、Space和沙箱槽位已清理，没有真实微信测试消息。原个人主账号的工具不改。
+
+## 笔记空间 JSON 报错排查（2026-10-14）
+
+- 用户报告 `Could not load this space: Unexpected token 'I', "Insufficie"... is not valid JSON`，询问是否因为未扫码。已用两个独立 synthetic 注册账号在生产复现：A 的 SB 登录 Cookie 打开 B 的 `.config` 返回 HTTP403 纯文本 `Insufficient access to this space`，客户端 boot.ts 把它 JSON.parse，出现完全相同弹窗。主页登录与 SB 登录分别维护，切换主页账号不会切换 SB Cookie。不能靠开放 Space 权限或扫码解决。
+- 未绑定微信的新账号正常登录 SB 后 `.cm-editor` 成功加载；Lucy/test2 的 SB 账号、空间及自身 write 成员均正常，test2 未绑定微信。用户尚未提供具体出错账号/URL，不能断言其浏览器实际 Cookie；无痕窗口使用个人主页显示的笔记账号与共用密码可验证账号混用。
+- 测试账号均已清理，没有改真实账号密码、ACL、生产代码，也未重启服务。SB 部署版本2.12.0/source70e58486；后续笔记验收需等待 `.cm-editor`，只等 URL 跳转或文件 API200 不足以确认编辑器启动。不要直接清空真实浏览器缓存或绕过原生退出同步，可能影响未同步笔记。
+
 ## 用户目标与授权
 
 - 将个人助手拓展为多用户服务，优先一个Pi SDK后端，共用基础服务，用户聊天/记忆/任务/凭据/trace隔离。

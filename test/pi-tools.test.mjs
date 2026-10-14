@@ -34,18 +34,10 @@ function fixture(t, action, contextFactory) {
   return { store, queue };
 }
 
-test('normal SDK runs can query fresh Beijing time without command access', async t => {
-  const before = Date.now();
+test('SDK runs without a sandbox expose no command or dedicated time tools', async t => {
   const { store, queue } = fixture(t, async tools => {
-    const tool = tools.find(tool => tool.name === 'time_now');
-    assert.ok(tool, 'Missing live time tool');
-    assert.ok(!tools.some(tool => ['cmd', 'bash', 'read', 'write', 'edit'].includes(tool.name)));
-    const value = JSON.parse((await tool.execute('fake', {})).content[0].text);
-    assert.equal(value.timezone, 'Asia/Shanghai');
-    assert.ok(Date.parse(value.utc) >= before && Date.parse(value.utc) <= Date.now());
-    assert.equal(Date.parse(value.local), Date.parse(value.utc));
-    assert.match(value.local, /\+08:00$/);
-    return value.local;
+    assert.ok(!tools.some(tool => ['time_now', 'cmd', 'bash', 'read', 'write', 'edit'].includes(tool.name)));
+    return 'No live command access';
   });
   const user = store.createUser('fake_alice', 'fake'), conversation = store.createConversation(user.id, 'fake');
   const run = store.createRun(user.id, conversation.id, '现在几点？');
@@ -90,7 +82,9 @@ test('persona draft SDK runs keep only the read tool', async t => {
 
 test('SDK cmd is scoped by the queue and cannot grant command access to persona drafts', async t => {
   const called = [];
-  const {store,queue} = fixture(t, async (tools,prompt) => {
+  const {store,queue} = fixture(t, async (tools,prompt,system) => {
+    assert.ok(!tools.some(tool=>tool.name==='time_now'));
+    assert.match(system,/TZ=Asia\/Shanghai date/);
     const cmd = tools.find(t=>t.name==='cmd');
     if (prompt==='draft') {assert.equal(cmd,undefined); return 'FAKE_DRAFT';}
     assert.ok(cmd); await cmd.execute('fake',{command:'printf FAKE',userId:'another-user',socket:'/etc/passwd'});
