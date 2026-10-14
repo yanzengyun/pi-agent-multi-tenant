@@ -1,0 +1,19 @@
+{
+  "testedAt": "2026-10-14T01:15:38.039Z",
+  "target": "lucy",
+  "variant": "amr_with_codec_and_duration",
+  "audioFormat": "amr_nb",
+  "sampleRate": 8000,
+  "durationMs": 3020,
+  "bytes": 4838,
+  "uploadType": 3,
+  "messageItemType": 3,
+  "encodeTypeOnWire": 5,
+  "playtimeOnWire": 3020,
+  "apiAccepted": true,
+  "ret": null,
+  "errcode": null,
+  "hasServerMessageId": true,
+  "clientPlaybackConfirmed": false,
+  "clientFeedback": "pending"
+}

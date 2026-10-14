@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { ILinkClient } from '/home/admin/pi-agent-multi-tenant-live/src/wechat.mjs';
 
+const completeFields = process.argv.includes('--complete-fields');
 const target = process.argv[2], directory = dirname(fileURLToPath(import.meta.url));
 if (!['lucy', 'personal'].includes(target)) throw new Error('Choose lucy or personal');
 const db = new DatabaseSync('/home/admin/.local/share/pi-agent-multi-tenant/data/assistant.sqlite', { readOnly: true });
@@ -15,11 +16,11 @@ let binding, inbox;
 if (target === 'lucy') {
   binding = db.prepare("SELECT b.* FROM wechat_bindings b JOIN users u ON u.id=b.user_id WHERE u.username='lucy' AND b.status='connected'").get();
   if (binding) inbox = db.prepare("SELECT i.context_token,r.created_at,r.prompt FROM wechat_inbox i JOIN runs r ON r.id=i.run_id WHERE i.binding_id=? AND i.message_id NOT LIKE 'reminder:%' ORDER BY i.rowid DESC LIMIT 1").get(binding.id);
-  if (!inbox || Date.now() - inbox.created_at > 300000) throw new Error('Send AMR测试 to Lucy first');
+  if (!inbox || Date.now() - inbox.created_at > 600000) throw new Error('Send AMR测试 to Lucy first');
 } else {
   const credentials = JSON.parse(readFileSync('/home/admin/.pi/agent/wechat-assistant/credentials.json'));
   const contextFile = '/home/admin/.pi/agent/wechat-assistant/context-tokens.json';
-  if (Date.now() - statSync(contextFile).mtimeMs > 300000) throw new Error('Send AMR测试 to personal WeChat first');
+  if (Date.now() - statSync(contextFile).mtimeMs > 600000) throw new Error('Send AMR测试 to personal WeChat first');
   const contexts = JSON.parse(readFileSync(contextFile));
   binding = { base_url: credentials.baseUrl, token: credentials.token, remote_user: credentials.userId };
   inbox = { context_token: contexts.tokens?.[credentials.userId] };
@@ -44,14 +45,16 @@ const audio = encoded.stdout;
 const client = new ILinkClient();
 const media = await client.uploadVoice(binding, { audio }); // pi-connect uploads audio as FILE (media_type=3).
 // pi-connect sets EncodeType=0 with json omitempty: wire payload has no encode_type or playtime.
+const durationMs = (audio.length - 6) / 32 * 20;
+const voiceItem = { media, ...(completeFields ? { encode_type: 5, bits_per_sample: 16, sample_rate: 8000, playtime: durationMs } : {}) };
 const result = await client.request(binding.base_url, '/ilink/bot/sendmessage', { token: binding.token,
   body: { msg: { from_user_id: '', to_user_id: binding.remote_user, client_id: 'pi-amr-probe-' + randomUUID(),
     message_type: 2, message_state: 2, context_token: inbox.context_token,
-    item_list: [{ type: 3, voice_item: { media } }] } } });
-const report = { testedAt: new Date().toISOString(), target, variant: 'pi_connect_exact_amr',
-  audioFormat: 'amr_nb', sampleRate: 8000, durationMs: (audio.length - 6) / 32 * 20, bytes: audio.length,
-  uploadType: 3, messageItemType: 3, encodeTypeOnWire: null, playtimeOnWire: null,
+    item_list: [{ type: 3, voice_item: voiceItem }] } } });
+const report = { testedAt: new Date().toISOString(), target, variant: completeFields ? 'amr_with_codec_and_duration' : 'pi_connect_exact_amr',
+  audioFormat: 'amr_nb', sampleRate: 8000, durationMs, bytes: audio.length,
+  uploadType: 3, messageItemType: 3, encodeTypeOnWire: completeFields ? 5 : null, playtimeOnWire: completeFields ? durationMs : null,
   apiAccepted: true, ret: result.ret ?? null, errcode: result.errcode ?? null,
   hasServerMessageId: Boolean(result.message_id), clientPlaybackConfirmed: false };
-writeFileSync(directory + '/result.json', JSON.stringify(report, null, 2), { mode: 0o600 });
+writeFileSync(directory + (completeFields ? '/complete-fields-result.json' : '/result.json'), JSON.stringify(report, null, 2), { mode: 0o600 });
 console.log(JSON.stringify(report));

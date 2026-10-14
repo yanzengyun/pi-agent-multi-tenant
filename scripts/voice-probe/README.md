@@ -8,9 +8,11 @@
 
 1. `python3 encode-amr.py --self-test`：1秒音频50帧，验证编码、解码、有效能量及非法输入拒绝。
 2. 先由用户给Lucy微信发一条新消息（例如“AMR测试”），待助手完成正常文字回复。Lucy不必自己执行实验，由本脚本发送。
-3. admin从原私有env加载密钥，运行`node probe.mjs lucy`；只读取Lucy的绑定与最新入站上下文，要求5分钟内的新消息；测试授权来自本会话，用户后续聊天也能刷新上下文。
+3. admin从原私有env加载密钥，运行`node probe.mjs lucy`；只读取Lucy的绑定与最新入站上下文，要求10分钟内的新消息；测试授权来自本会话，用户后续聊天也能刷新上下文。
 4. 安全元数据保存result.json（无key/bot token/context token/CDN参数），必须由用户反馈是否出现、能播放语音气泡。
 
 `personal`参数用于用户明确选择改测原主账号时，固定原凭据userId，不接受任意收件人。该实验没有持久outbox、自动重试或常驻服务；重复运行会再发测试消息，需明确测试意图。
 
 2026-10-14已真实发送pi_connect_exact_amr：2940ms/4710字节，API接受并返回服务端消息ID；用户反馈“啥都没”：客户端没有出现新消息/语音气泡，实验失败；不能依据API成功将该候选用于生产。详见result.json。
+
+补充实验：`node probe.mjs lucy --complete-fields`在同种AMR载荷中显式发送encode_type=5、bits_per_sample=16、sample_rate=8000、playtime=实际毫秒数，排除候选实现缺字段；2026-10-14T01:15:38Z接口接受（3020ms/4838字节），客户端反馈pending。详见complete-fields-result.json。新上下文最大年龄调整为10分钟，便于两轮用户确认实验；不会重新登录或轮询。
