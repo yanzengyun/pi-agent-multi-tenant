@@ -1,6 +1,7 @@
 import { systemPrompt } from './engine.mjs';
 import { EventEmitter } from 'node:events';
 import { directVoiceText } from './voice-preferences.mjs';
+import { isQuotaFailure } from './model-errors.mjs';
 
 export class RunQueue extends EventEmitter {
   constructor(store, engine, { timeoutMs = 120000, contextFactory = () => ({}), beforeRun = async () => {} } = {}) {
@@ -73,7 +74,7 @@ export class RunQueue extends EventEmitter {
         this.store.runStatus(run.id, 'completed', response);
         emit('completed', { response });
       } catch (failure) {
-        const error = controller.signal.aborted ? 'run_aborted' : 'engine_failed';
+        const error = controller.signal.aborted ? 'run_aborted' : isQuotaFailure(failure) ? 'model_quota_exhausted' : 'engine_failed';
         this.store.runStatus(run.id, 'failed', null, error);
         emit('failed', { error, ...(this.engine.sanitize ? { diagnostic: this.engine.sanitize({ message: failure.message }) } : {}) });
       } finally {

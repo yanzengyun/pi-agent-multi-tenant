@@ -3,6 +3,7 @@ import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { systemPrompt } from './engine.mjs';
+import { isQuotaFailure } from './model-errors.mjs';
 
 export class PiEngine {
   mode = 'pi';
@@ -134,7 +135,9 @@ export class PiEngine {
       await session.prompt(prompt);
       const assistant = session.messages.findLast(message => message.role === 'assistant');
       if (assistant?.errorMessage || assistant?.stopReason === 'error' || assistant?.stopReason === 'aborted') {
-        throw new Error('Model failed');
+        const failure = new Error('Model failed');
+        if (assistant?.stopReason !== 'aborted' && isQuotaFailure(assistant?.errorMessage)) failure.code = 'model_quota_exhausted';
+        throw failure;
       }
       const text = session.getLastAssistantText();
       if (!text) throw new Error('Empty model response');

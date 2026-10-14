@@ -30,6 +30,22 @@ function confirm(client, store, user, login, suffix) {
     ilink_bot_id: 'fake-bot-' + suffix, ilink_user_id: 'fake-peer-' + suffix, baseurl: 'https://ilinkai.weixin.qq.com' });
 }
 
+test('quota failure sends a specific fixed reply only to the affected user and once per request', async t => {
+  const { store, alice, bob, manager, client } = fixture(t);
+  const binding = store.bindWechat(alice.id, { token: 'fake-token', botId: 'quota-bot', remoteUser: 'quota-peer', baseUrl: 'https://ilinkai.weixin.qq.com' });
+  manager.ingest(binding, { message_type: 1, message_id: 'quota-request', from_user_id: binding.remote_user,
+    context_token: 'quota-context', item_list: [{ type: 1, text_item: { text: '你好' } }] });
+  const run = store.pending()[0];
+  const queue = new RunQueue(store, { async run() { throw new Error('429 已达到 Token Plan 用量上限 (2056) fake-private-key'); } });
+  await queue.work; await manager.flush(); await manager.flush(); await queue.close();
+  assert.equal(store.run(alice.id, run.id).error, 'model_quota_exhausted');
+  assert.equal(client.sent.length, 1);
+  assert.match(client.sent[0].text, /模型服务额度已用完/);
+  assert.ok(!client.sent[0].text.includes('fake-private-key'));
+  assert.equal(client.sent[0].localUser, alice.id);
+  assert.notEqual(client.sent[0].localUser, bob.id);
+});
+
 test('QRs are isolated, expire and cannot be silently reused after cancellation', async t => {
   const { store, alice, bob, client, manager } = fixture(t);
   const a = await manager.login(alice.id), b = await manager.login(bob.id);

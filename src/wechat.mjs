@@ -1,6 +1,7 @@
 import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import QRCode from 'qrcode';
+import { QUOTA_NOTICE } from './model-errors.mjs';
 
 const DEFAULT_BASE = 'https://ilinkai.weixin.qq.com';
 export function wechatBase(value) {
@@ -213,7 +214,7 @@ export class WechatManager {
       if (binding.status !== 'connected') continue;
       if (inbox.message_id.startsWith('reminder:')) inbox.context_token = this.store.latestWechatContext(binding.id) || inbox.context_token;
       try {
-        const reply = inbox.status === 'completed' ? inbox.response : '本次处理未完成，请稍后重试。';
+        const reply = inbox.status === 'completed' ? inbox.response : inbox.error === 'model_quota_exhausted' ? QUOTA_NOTICE : '本次处理未完成，请稍后重试。';
         const characters = Array.from(reply), chunks = [];
         for (let offset = 0; offset < characters.length; offset += 3000) chunks.push(characters.slice(offset, offset + 3000).join(''));
         const voice = inbox.status === 'completed' ? this.store.voice(inbox.user_id, inbox.run_id) : undefined;

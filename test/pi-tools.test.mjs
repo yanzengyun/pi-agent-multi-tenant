@@ -21,8 +21,8 @@ function fixture(t, action, contextFactory) {
         systemPrompt: options.resourceLoader.getSystemPrompt(), messages: [],
         getActiveToolNames: () => options.tools, subscribe: () => () => {}, dispose() {},
         async prompt(prompt) {
-          session.text = await action(options.customTools, prompt, session.systemPrompt);
-          session.messages.push({ role: 'assistant' });
+          session.text = await action(options.customTools, prompt, session.systemPrompt, session);
+          session.messages.push({ role: 'assistant', ...session.final });
         },
         getLastAssistantText: () => session.text,
       };
@@ -33,6 +33,18 @@ function fixture(t, action, contextFactory) {
   t.after(async () => { await queue.close(); store.close(); rmSync(directory, { recursive: true, force: true }); });
   return { store, queue };
 }
+
+test('SDK quota error survives model failure normalization without exposing provider text', async t => {
+  const { store, queue } = fixture(t, async (_tools, _prompt, _system, session) => {
+    session.final = { stopReason: 'error', errorMessage: '429 已达到 Token Plan 用量上限 (2056) fake-private-key' };
+    return '';
+  });
+  const user = store.createUser('quota_user', 'fake'), conversation = store.createConversation(user.id, 'quota');
+  const run = store.createRun(user.id, conversation.id, '你好');
+  const settled = new Promise(resolve => queue.once('settled', resolve)); queue.kick(); await settled;
+  assert.equal(store.run(user.id, run.id).error, 'model_quota_exhausted');
+  assert.ok(!JSON.stringify(store.traces(user.id, run.id)).includes('fake-private-key'));
+});
 
 test('SDK runs without a sandbox expose no command or dedicated time tools', async t => {
   const { store, queue } = fixture(t, async tools => {
