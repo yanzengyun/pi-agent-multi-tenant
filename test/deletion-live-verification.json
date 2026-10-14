@@ -1,0 +1,19 @@
+{
+  "testedAt": "2026-10-14T04:32:59.489Z",
+  "syntheticUserId": "7e77e321-ffac-44bb-835d-07c9ad7df4e1",
+  "realSandboxAllocationReleased": true,
+  "oldSessionRevoked": true,
+  "noteArchiveNoMembers": true,
+  "noteAccountsRemoved": true,
+  "oldAgentNoteAccessDenied": true,
+  "realUsersDeleted": false,
+  "archivedNoteFileRetained": true,
+  "realUserIdentitiesAndBindingsPreserved": true,
+  "noRemainingSyntheticAccounts": true,
+  "personalProcessUnchanged": true,
+  "servicesActive": true,
+  "productionDeployed": true,
+  "browserDeletionVerified": true,
+  "backendTestsPassed": 62,
+  "sandboxPoolTestsPassed": 5
+}

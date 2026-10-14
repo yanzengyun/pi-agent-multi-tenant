@@ -23,6 +23,7 @@
   "personalProcessUnchanged": true,
   "syntheticUserAndNotesCleaned": true,
   "backup": "/home/admin/.local/share/pi-agent-multi-tenant/backups/20261014-114938",
-  "finalMobileButtonCssFix": "local only; server sync pending after network restriction in resumed session",
-  "latestResumeSsh": "socket: Operation not permitted; no remote changes during resumed session"
+  "finalMobileButtonCssFix": "deployed and verified on mobile viewport",
+  "latestResumeSsh": "restored after client network permission enabled",
+  "latestBackendTestsPassed": 62
 }

@@ -9,7 +9,15 @@
 - 用户已要求开始开发，并指定GitHub仓库 https://github.com/yanzengyun/pi-agent-multi-tenant.git 上传代码。
 - 当前个人助手必须保持可用。没有授权把真实用户状态迁入开发环境；测试仅用虚构用户。
 
-## 管理台删除用户（2026-10-14，本地完成待上线）
+## 当前上线与SSH恢复（2026-10-14）
+
+- 用户从PC重新启用网络后，本轮root SSH成功，pi-multi-tenant/nginx/pi-sandbox/watchdog全active；之前是会话沙箱禁网，未改服务器SSH权限。已继续完成待办，原个人Pi进程不重启。
+- 已通过完整62项Node和5项Python池测试，部署笔记密码文案、手机退出按钮布局和删除用户功能；备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261014-123012。现有用户/微信绑定摘要与原个人PID保持。
+- 公网verify-invites-ui完整通过（含真实模型AI草稿只读、笔记改名/共用密码/改密后登录、真实QR仅生成取消、邀请单表单/自动登录/角色跳转/手机布局无横溢出、删除确认/旧主页401与旧笔记拒绝），JS错误0，无助手Basic挑战。
+- 新verify-deletion-live用独立verify_delete_账号实际占用沙箱并写测试文件，经正式HTTP管理员DELETE清理后确认slot名额返回、session失效、SB Space无成员/无公开访问、human/agent账户移除、旧Agent token读笔记拒绝；root读取该synthetic笔记确认旧文件仍在私有归档。测试断言曾遇到SB省略空members字段，改成members||{}后通过，无生产逻辑改动。没有删除真实用户，已确认无verify_ui_/verify_delete_残留应用账号；预期保留测试笔记归档和删除索引。
+- 最新真实报告test/deletion-live-verification.json。此前本地“待上线”条目为历史情况，已由本节完成；旧deletion-local-verification.json保留当时离线验证记录。源码/Git和服务器文档在本轮收尾同步。
+
+## 管理台删除用户（2026-10-14，已上线，以下为开发记录）
 
 - 用户要求已有注册用户可删除并处理旧资源。已增加普通用户删除/重试清理按钮、输入用户名确认的dialog、DELETE /api/admin/users/:id；不能删除管理员/普通用户不能调用，正在运行任务或更新笔记凭据时拒绝。
 - 新user_deletions表保存停用/清理状态，先撤销登录与目标邀请、取消排队任务/提醒，再停止微信并等待晚到扫码/投递，归档SB、release沙箱、删除用户目录和所属SQL行。失败保持停用供管理员重试；服务重启不恢复账号。新账号重新注册同名获得新UUID，不继承旧记忆。没有自动删除任何真实用户。
@@ -17,7 +25,7 @@
 - 本地8项删除测试通过；加Pi工具/提醒/微信/MP3回归合计36项Node通过（使用--test-isolation=none确认实际测试计数），5项Python池测试通过，JS语法/diff检查通过。权限测试直接调真实HTTP handler，不开socket；SB归档测试通过注入admin响应验证，尚非真实SB验收。scripts/verify-invites-ui.mjs补齐真实删除确认和旧登录/笔记拒绝断言，只用于synthetic用户。
 - 当前SSH仍socket Operation not permitted，功能/前几轮的CSS与笔记文案均未同步本轮新改动。网络恢复后先运行完整npm test，空闲时scripts/update-live.py部署（仅重启多用户后端，已有sandbox /release无需更新runner），再跑verify-invites-ui；测试删除成功会留下预期的私有测试笔记归档。确认旧笔记访问确实403/401和真实sandbox release通过后才标已上线。推送GitHub与同步服务器Git克隆仍待执行。
 
-## 笔记密码文案简化（2026-10-14，待同步上线）
+## 笔记密码文案简化（2026-10-14，已上线，以下为开发记录）
 
 - 用户要求简化「我的笔记」密码设置。保持后端当前密码校验，不把会话当作修改凭据的唯一验证，也不缓存明文密码。已共用密码的账号只显示“默认使用主页密码，无需单独设置”，折叠项称“修改笔记用户名”；旧账号称“同步旧账号的笔记登录”。输入框明确“当前主页密码（用于验证）/不是设置新密码”，真正改密码指向账号安全。保存成功收起表单。
 - 本轮只修改account.html/account.js及对应浏览器断言；后端认证逻辑未改。当前环境联网受限，SSH socket Operation not permitted；本地语法/diff检查后提交，尚未上线，也未能重跑公网浏览器验收。与上一节待同步的手机CSS及文档一起复制到服务器live，再推送GitHub/同步服务器Git克隆；静态文件变动无需重启Pi。
