@@ -4,7 +4,11 @@ async function api(path, method = 'GET', value) {
     headers: value === undefined ? {} : { 'Content-Type': 'application/json' },
     body: value === undefined ? undefined : JSON.stringify(value) });
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || '请求失败');
+  if (!response.ok) {
+    if (result.error === 'authentication_required') { $('#console').hidden = true; $('#login').hidden = false; }
+    const messages = { invalid_credentials: '账号或密码不正确。', username_exists: '账号已存在。', login_throttled: '请求较多，请稍后再试。' };
+    const error = new Error(messages[result.error] || result.error || '请求失败'); error.code = result.error; throw error;
+  }
   return result;
 }
 function notice(message) { $('#notice').textContent = message; }
@@ -82,7 +86,7 @@ async function showTrace(user) {
 }
 async function showConsole() {
   const me = await api('/api/me');
-  if (me.role !== 'admin') throw new Error('只有管理员可以使用此管理台');
+  if (me.role !== 'admin') { location.replace(new URL('account', document.baseURI)); return; }
   const data = await api('/api/admin/users');
   const select = $('#invite-target'), prior = select.value; select.replaceChildren();
   const fresh = document.createElement('option'); fresh.value = ''; fresh.textContent = '新用户注册'; select.append(fresh);
@@ -92,15 +96,19 @@ async function showConsole() {
   select.value = prior; await refreshInvites();
   $('#login').hidden = true; $('#console').hidden = false;
   $('#mode').textContent = data.mode === 'mock' ? '测试模式：不调用真实模型' : 'Pi SDK：真实模型模式';
+  const members = data.users.filter(user => user.role === 'user');
+  $('#user-summary').textContent = `${members.length} 位用户 · ${members.filter(user => user.wechat.status === 'connected').length} 位已连接微信`;
   $('#users').replaceChildren();
   for (const user of data.users) {
     const row = document.createElement('article');
+    row.dataset.username = user.username.toLowerCase();
     const name = document.createElement('strong'); name.textContent = user.username;
     const detail = document.createElement('span'); detail.textContent = user.role === 'admin' ? '管理员' :
       `微信：${states[user.wechat.status] || user.wechat.status} · 笔记：${states[user.silverbullet.status] || user.silverbullet.status}`;
     const info = document.createElement('div'); info.append(name, detail); row.append(info);
     if (user.role !== 'admin') {
       const controls = document.createElement('div'); controls.className = 'actions';
+      controls.append(action('账号激活 / 重置密码', async () => { $('#invite-target').value = user.id; $('#invite-form').requestSubmit(); $('#invite-form').scrollIntoView({ behavior: 'smooth', block: 'center' }); }));
       controls.append(action('运行记录', () => showTrace(user)));
       controls.append(action('定时提醒', () => showReminders(user)));
       if (data.wechatEnabled) controls.append(user.wechat.status === 'not_bound'
@@ -118,7 +126,18 @@ async function showConsole() {
     }
     $('#users').append(row);
   }
+  filterUsers();
 }
+function filterUsers() {
+  const query = $('#user-search').value.trim().toLowerCase(); let visible = 0;
+  for (const row of $('#users').children) { row.hidden = !row.dataset.username.includes(query); if (!row.hidden) visible++; }
+  $('#user-empty').hidden = visible !== 0;
+}
+$('#user-search').addEventListener('input', filterUsers);
+$('#refresh-users').addEventListener('click', async event => {
+  event.target.disabled = true;
+  try { await showConsole(); notice('状态已刷新。'); } catch (error) { notice(error.message); } finally { event.target.disabled = false; }
+});
 let reminderUser = null;
 async function refreshReminders() {
   const user = reminderUser, data = await api(`/api/admin/users/${user.id}/reminders`);
@@ -153,12 +172,13 @@ $('#reminder-close').addEventListener('click', () => { $('#reminder-dialog').clo
 $('#reminder-dialog').addEventListener('cancel', () => { reminderUser = null; });
 $('#login-form').addEventListener('submit', async event => {
   event.preventDefault(); const form = new FormData(event.target);
+  const button = event.target.querySelector('button'); button.disabled = true;
   try { await api('/api/login', 'POST', Object.fromEntries(form)); $('#login-form').reset(); await showConsole(); notice(''); }
-  catch (error) { notice(error.message); }
+  catch (error) { notice(error.message); } finally { button.disabled = false; }
 });
 $('#user-form').addEventListener('submit', async event => {
   event.preventDefault();
-  try { await api('/api/admin/users', 'POST', Object.fromEntries(new FormData(event.target))); event.target.reset(); await showConsole(); notice('用户已创建，私人数据独立保存。'); }
+  try { const user = await api('/api/admin/users', 'POST', Object.fromEntries(new FormData(event.target))); event.target.reset(); await showConsole(); $('#invite-target').value = user.id; notice('用户已创建。请生成账号激活邀请，让本人设置密码并登录。'); }
   catch (error) { notice(error.message); }
 });
 $('#logout').addEventListener('click', async () => {
@@ -179,7 +199,11 @@ $('#invite-form').addEventListener('submit', async event => {
   event.preventDefault(); const button = event.target.querySelector('button'); button.disabled = true;
   try {
     const result = await api('/api/admin/invites', 'POST', { userId: $('#invite-target').value || undefined });
-    $('#invite-url').value = result.url; $('#invite-result').hidden = false; await refreshInvites(); notice('邀请已生成，请复制链接交给对应用户。');
+    $('#invite-url').value = result.url; $('#invite-result').hidden = false; $('#invite-copy').textContent = '复制邀请链接'; await refreshInvites(); notice('邀请已生成，请复制链接交给对应用户。');
   } catch (error) { notice(error.message); } finally { button.disabled = false; }
 });
-showConsole().catch(() => {});
+$('#invite-copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('#invite-url').value); $('#invite-copy').textContent = '已复制'; }
+  catch { $('#invite-url').focus(); $('#invite-url').select(); notice('请复制已选中的邀请链接。'); }
+});
+showConsole().catch(error => { if (error.code !== 'authentication_required') notice(error.message); });

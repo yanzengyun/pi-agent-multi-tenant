@@ -2,12 +2,11 @@
 const { chromium } = await import(process.env.PI_BROWSER_MODULE || '/tmp/pi-backend-browser/node_modules/playwright-core/index.mjs');
 import { readFileSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-const gateway = JSON.parse(readFileSync('../alibaba_host/config/apps-login.json'));
 const login = JSON.parse(readFileSync('../alibaba_host/config/multi-tenant-login.json'));
 const browser = await chromium.launch({ executablePath: process.env.PI_BROWSER_BINARY || '/home/vibe/.cache/ms-playwright/chromium_headless_shell-1161/chrome-linux/headless_shell', args: ['--no-sandbox'] });
 let user;
 try {
-  const context = await browser.newContext({ httpCredentials: { username: gateway.username, password: gateway.password } });
+  const context = await browser.newContext();
   const page = await context.newPage(), errors = [];
   page.on('pageerror', error => errors.push(error.name));
   await page.goto(login.url);
@@ -17,6 +16,7 @@ try {
   await page.locator('#console').waitFor({ state: 'visible' });
   assert.match(await page.locator('#mode').textContent(), /真实模型/);
   const username = 'verify_ui_' + Date.now();
+  await page.locator('#manual-user summary').click();
   await page.locator('#user-form input').fill(username);
   const created = page.waitForResponse(r => r.url().endsWith('/api/admin/users') && r.request().method() === 'POST');
   await page.locator('#user-form button').click();

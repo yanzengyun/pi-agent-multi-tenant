@@ -2,9 +2,9 @@
 
 一键连接微信的多租户个人助手。目标是一个管理员控制台、一个 Pi SDK 后端、按用户隔离的数据，以及共用的 SilverBullet 等基础服务。
 
-**当前版本：可扫码接入的独立服务，已部署。** 管理地址为 `https://123.56.157.198:32651/assistant/`，使用现有管理员密码网关，后台账号为 admin；后台密码保存在本机 `alibaba_host/config/multi-tenant-login.json` 和服务器 `/home/admin/.config/pi-agent-multi-tenant/login.json`，不进Git。管理员创建用户后让本人扫码，并先在微信发一条消息。真实二维码、模型调用与已有用户微信收发元数据已验证。
+**当前版本：可扫码接入的独立服务，已部署。** 管理地址为 `https://123.56.157.198:32651/assistant/`，仅使用后台账号登录（已移除助手页面的浏览器Basic弹窗），后台账号为 admin；后台密码保存在本机 `alibaba_host/config/multi-tenant-login.json` 和服务器 `/home/admin/.config/pi-agent-multi-tenant/login.json`，不进Git。管理员创建用户后让本人扫码，并先在微信发一条消息。真实二维码、模型调用与已有用户微信收发元数据已验证。
 
-已增加邀请注册与用户自助页：`https://123.56.157.198:32651/assistant/account`。用户不需要管理员网关口令；管理员在原后台生成7天有效的一次性邀请，用户凭链接注册、登录、绑定自己的微信，设置笔记用户名和人物设定。公开注册必须有有效邀请，管理员仍可手动创建用户。
+已增加邀请注册与用户自助页：`https://123.56.157.198:32651/assistant/account`。用户不需要管理员网关口令；管理员在原后台生成7天有效的一次性邀请，用户凭链接设置账号和密码，注册后自动登录个人主页，再绑定微信、设置笔记用户名和人物设定。邀请页只显示注册表单，已使用/失效/缺失邀请单独提示并提供登录入口。个人主页按连接与笔记、人物设定、账号安全分栏；普通用户误进管理台会自动回个人主页，管理员误进个人页会回管理台。公开注册必须有有效邀请，管理员仍可手动创建用户。
 
 ## 已实现
 
@@ -157,9 +157,9 @@ Cookie供管理台使用，Bearer供集成/测试使用。用户权限不接受�
 
 `scripts/deploy-live.py` 部署到 `/home/admin/pi-agent-multi-tenant-live`，状态为 `/home/admin/.local/share/pi-agent-multi-tenant/data`，私有配置为 `/home/admin/.config/pi-agent-multi-tenant`。它与旧开发实例、个人Pi的状态分开。`pi-multi-tenant.service` 已启用开机启动，异常退出自动重启；MemoryHigh=256MiB、MemoryMax=384MiB、CPUQuota=50%，超限可能终止本后台，不会借此扩大个人助手权限。
 
-后台仅监听127.0.0.1:32215，`ASSISTANT_BASE_PATH=/assistant`、Secure Cookie、固定Origin均已启用。现有Nginx32651保护管理台及管理员接口，个人trace仍在原根路径。用户account/join页面和所需登录、自助接口允许通过应用自身认证访问，普通用户不会获得管理员网关口令。新笔记容器 `silverbullet-multi-tenant` 监听127.0.0.1:32216，数据为 `/opt/pi-agent-multi-tenant-sb/data`，restart=unless-stopped，限制128MiB/0.25CPU。
+后台仅监听127.0.0.1:32215，`ASSISTANT_BASE_PATH=/assistant`、Secure Cookie、固定Origin均已启用。Nginx32651的整个/assistant/路径关闭Basic认证，由应用自己的登录Cookie和服务器管理员/用户权限校验保护API。匿名管理API返回401，已登录普通用户访问管理API返回403，不触发浏览器密码弹窗；个人trace仍在原根路径使用原Basic保护。新笔记容器 `silverbullet-multi-tenant` 监听127.0.0.1:32216，数据为 `/opt/pi-agent-multi-tenant-sb/data`，restart=unless-stopped，限制128MiB/0.25CPU。
 
-`/users/<uuid>/` 使用SilverBullet自身账号及Space权限，**不共享管理员网关口令**。笔记用户可用其人类账号登录自己的空间；后台和个人trace仍要求管理员网关认证。Agent token只用于服务器内部访问。原生认证路由 `/.auth/central/` 也转发到笔记服务；server-config.primaryUrl必须为公网Origin，不能填内部loopback地址，否则浏览器跳转失败。内部管理请求使用公共Host和HTTPS代理头。路由位于 `/etc/nginx/pi-app-routes.d/pi-multi-tenant.conf`。
+`/users/<uuid>/` 使用SilverBullet自身账号及Space权限，**不共享管理员网关口令**。笔记用户可用其人类账号登录自己的空间；后台使用应用管理员登录；个人trace仍要求原管理员网关认证。Agent token只用于服务器内部访问。原生认证路由 `/.auth/central/` 也转发到笔记服务；server-config.primaryUrl必须为公网Origin，不能填内部loopback地址，否则浏览器跳转失败。内部管理请求使用公共Host和HTTPS代理头。路由位于 `/etc/nginx/pi-app-routes.d/pi-multi-tenant.conf`。
 
 重新部署会短暂停止本后台。脚本拒绝队列中有运行或等待任务的部署，先检查可用内存，恢复后再启动。不要同时启动开发实例导入正式状态，或重载个人Pi来更新本项目。部署失败可能需要人工恢复，当前脚本不是支持原子回滚的发布系统。
 
@@ -199,11 +199,11 @@ docker ps --filter name=silverbullet-multi-tenant
 
 公网TLS验证、匿名401、登录、Secure且限定路径的Cookie及退出撤销已通过。浏览器验收使用临时公开Playwright容器，程序见 `scripts/verify-ui.mjs`、`scripts/verify-ui-container.py`；生成的虚构账号通过 `cleanup-ui-probe.py` 限定所有权后清理。此检查不代替真人微信收发验收。
 
-`verify-invites-ui.mjs` 已实测无需管理员口令的邀请注册、拒绝重复邀请、人物设定保存、AI只读草稿生成、用户自选笔记用户名并登录、用户密码不保留、扫码PNG、统一密码修改后重新登录笔记与旧网页会话撤销；用户访问管理接口和个人trace均401，JS错误0。真实Pi模型上下文已验证AGENTS内容注入且bash/read/write/edit不在工具名单。后续真实用户扫码及回复发送确认已有服务器元数据验证，未导出私人聊天正文。
+`verify-invites-ui.mjs` 已实测无需管理员口令的邀请注册、拒绝重复邀请、人物设定保存、AI只读草稿生成、用户自选笔记用户名并登录、用户密码不保留、扫码PNG、统一密码修改后重新登录笔记与旧网页会话撤销；用户访问管理接口403、个人trace401，JS错误0。真实Pi模型上下文已验证AGENTS内容注入且bash/read/write/edit不在工具名单。后续真实用户扫码及回复发送确认已有服务器元数据验证，未导出私人聊天正文。
 
 后续会话先读 [HANDOFF.md](HANDOFF.md)。
 
-2026-10-13 笔记认证排查：浏览器验证弹窗来自根路径原生认证请求落入管理员Basic网关，其后还有错误的primaryUrl内部地址。修复专用认证路由及公网Origin后，浏览器验收检查整个笔记导航无WWW-Authenticate挑战，登录后实际读取自身index.md成功；后台与个人trace继续401保护。
+2026-10-13 笔记认证排查：浏览器验证弹窗来自根路径原生认证请求落入管理员Basic网关，其后还有错误的primaryUrl内部地址。修复专用认证路由及公网Origin后，浏览器验收检查整个笔记导航无WWW-Authenticate挑战，登录后实际读取自身index.md成功；该历史阶段后台与个人trace继续401保护；2026-10-14助手路径已改为应用登录，个人trace仍保留Basic。
 
 
 ## 命令沙箱与工作区复用池（已上线）

@@ -90,17 +90,9 @@ for _ in range(40):
  except OSError:time.sleep(.5)
 else:raise SystemExit('Assistant failed health check')
 route=Path('/etc/nginx/pi-app-routes.d/pi-multi-tenant.conf')
-text='''location = /assistant { return 302 /assistant/; }
-location /assistant/ {
- proxy_pass http://127.0.0.1:32215;
- proxy_http_version 1.1;
- proxy_set_header Host $http_host;
- proxy_set_header X-Forwarded-Proto https;
- proxy_set_header X-Real-IP $remote_addr;
- proxy_set_header Authorization "";
- proxy_read_timeout 70s;
-}
-location ~ ^/assistant/(account/?|join/?|account\.js|style\.css|api/(login|logout|me|register|invitation|account(/.*)?))$ {
+text='''location = /assistant { auth_basic off; return 302 /assistant/; }
+location ^~ /assistant/ {
+ # The assistant uses its own session login and server-side admin/user permissions.
  auth_basic off;
  proxy_pass http://127.0.0.1:32215;
  proxy_http_version 1.1;
