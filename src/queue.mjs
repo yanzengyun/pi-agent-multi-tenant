@@ -1,5 +1,6 @@
 import { systemPrompt } from './engine.mjs';
 import { EventEmitter } from 'node:events';
+import { directVoiceText } from './voice-preferences.mjs';
 
 export class RunQueue extends EventEmitter {
   constructor(store, engine, { timeoutMs = 120000, contextFactory = () => ({}), beforeRun = async () => {} } = {}) {
@@ -55,7 +56,18 @@ export class RunQueue extends EventEmitter {
         emit('prompt', { mode: this.engine.mode || 'mock',
           system: systemPrompt(context.memory(), context.agentProfile()), input: run.prompt });
         this.store.message(run.user_id, run.conversation_id, 'user', run.prompt);
-        const response = await this.engine.run(context, run.prompt);
+        const direct = context.speech && directVoiceText(run.prompt);
+        let response;
+        if (typeof direct === 'string') {
+          try { await context.speech.prepare(direct, controller.signal); response = direct; emit('voice_direct', { prepared: true }); }
+          catch { response = '语音暂时生成失败，请稍后重试。'; emit('voice_failed', { error: 'speech_failed' }); }
+        } else {
+          response = await this.engine.run(context, run.prompt);
+          if (context.speech?.finish && !controller.signal.aborted) {
+            try { await context.speech.finish(response, controller.signal, run.prompt); }
+            catch { emit('voice_failed', { error: 'speech_failed' }); }
+          }
+        }
         if (controller.signal.aborted) throw new Error('Run aborted');
         this.store.message(run.user_id, run.conversation_id, 'assistant', response);
         this.store.runStatus(run.id, 'completed', response);

@@ -7,6 +7,7 @@ import { RunQueue } from './queue.mjs';
 import { WechatManager } from './wechat.mjs';
 import { Reminders } from './reminders.mjs';
 import { UserDeletion } from './user-deletion.mjs';
+import { DEFAULT_VOICE, voicePreferences } from './voice-preferences.mjs';
 
 class HttpError extends Error {
   constructor(status, code) { super(code); this.status = status; }
@@ -57,11 +58,15 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
   let activeLogins = 0;
   const failures = new Map();
   const credentialChanges = new Set();
+  const voicePreviews = new Map();
+  function ownVoicePreferences(userId) {
+    return voicePreferences(store.integration(userId, 'voice')?.state || {}, { ...DEFAULT_VOICE, voiceId: speech?.voiceId || DEFAULT_VOICE.voiceId });
+  }
   const userDeletion = new UserDeletion(store, { wechat, silverbullet, sandbox, credentialChanges });
   const server = createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'");
     const reply = (code, data) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); };
     try {
       const originalPath = new URL(req.url, 'http://localhost').pathname;
@@ -130,6 +135,42 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
       let selfService = false;
       if (path.startsWith('/api/account')) {
         if (principal.role !== 'user') throw new HttpError(403, 'user_account_required');
+        if (path === '/api/account/voice' && req.method === 'GET') return reply(200, { enabled: Boolean(speech), settings: ownVoicePreferences(principal.id) });
+        if (path === '/api/account/voice/voices' && req.method === 'GET') {
+          if (!speech) throw new HttpError(503, 'speech_disabled');
+          try { return reply(200, { voices: await speech.voices() }); }
+          catch { throw new HttpError(502, 'voice_catalog_unavailable'); }
+        }
+        if (path === '/api/account/voice' && req.method === 'PUT') {
+          if (!speech) throw new HttpError(503, 'speech_disabled');
+          const input = await body(req);
+          try {
+            const settings = await speech.settings(input, ownVoicePreferences(principal.id));
+            store.requireUsable(principal.id); store.setIntegration(principal.id, 'voice', 'configured', settings);
+            return reply(200, { settings });
+          } catch (error) {
+            throw new HttpError(error.message === 'voice_catalog_unavailable' ? 502 : 400,
+              ['invalid_voice_preferences','invalid_voice_id','voice_catalog_unavailable'].includes(error.message) ? error.message : 'voice_update_failed');
+          }
+        }
+        if (path === '/api/account/voice/preview' && req.method === 'POST') {
+          if (!speech) throw new HttpError(503, 'speech_disabled');
+          const input = await body(req);
+          if (voicePreviews.has(principal.id) || voicePreviews.size >= 2) throw new HttpError(429, 'voice_preview_busy');
+          const controller = new AbortController(); voicePreviews.set(principal.id, controller);
+          res.once('close', () => { if (!res.writableEnded) controller.abort(); });
+          try {
+            const settings = await speech.settings(input.settings || {}, ownVoicePreferences(principal.id), controller.signal);
+            const sample = input.text === undefined ? '你好，今天也要开心。' : text(input.text, 100);
+            const voice = await speech.synthesize(sample, controller.signal, settings);
+            controller.signal.throwIfAborted(); store.requireUsable(principal.id);
+            res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Content-Length': voice.audio.length }); res.end(voice.audio); return;
+          } catch (error) {
+            if (controller.signal.aborted) return;
+            throw new HttpError(['invalid_voice_preferences','invalid_voice_id','invalid_input'].includes(error.message) ? 400 : 502,
+              ['invalid_voice_preferences','invalid_voice_id','invalid_input'].includes(error.message) ? error.message : 'voice_preview_failed');
+          } finally { voicePreviews.delete(principal.id); }
+        }
         if (req.method === 'GET' && path === '/api/account') return reply(200, { user: principal,
           wechat: wechat?.view(principal.id) || { status: 'disabled' }, silverbullet: silverbullet?.view(principal.id) || { status: 'disabled' } });
         if (path === '/api/account/agents') {

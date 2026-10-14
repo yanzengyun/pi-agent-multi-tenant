@@ -10,7 +10,7 @@ import { Store } from '../src/store.mjs';
 function fixture(t, action, contextFactory) {
   const directory = mkdtempSync(join(tmpdir(), 'pi-tools-'));
   const store = new Store(directory), engine = new PiEngine({ provider: 'fake', model: 'fake' });
-  engine.Type = { Object: value => value, String: value => value };
+  engine.Type = { Object: value => value, String: value => value, Number: value => value, Optional: value => value };
   engine.sdk = {
     createExtensionRuntime: () => ({}),
     ModelRuntime: { create: async () => ({ setRuntimeApiKey: async () => {}, getModel: () => ({}) }) },

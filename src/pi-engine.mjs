@@ -59,6 +59,17 @@ export class PiEngine {
       parameters: Type.Object({ text: Type.String({ maxLength: 200 }) }),
       async execute(_id, { text }) { return result(JSON.stringify(await ctx.speech.prepare(text, ctx.signal))); },
     });
+    if (ctx.speech?.preferences) customTools.push(
+      { name: 'voice_preferences_read', label: 'My Voice Settings',
+        description: '读取自己的声音偏好和系统音色选项。可按中文名称搜索；不返回其他用户的设置或自定义声音。',
+        parameters: Type.Object({ query: Type.Optional(Type.String({ maxLength: 60 })) }),
+        async execute(_id, { query }) { return result(JSON.stringify({ settings: ctx.speech.preferences(), voices: await ctx.speech.options(query) })); } },
+      { name: 'voice_preferences_write', label: 'Save My Voice Settings',
+        description: '仅在用户要求换声音、语速、语气或默认语音回复时保存自己的偏好。先读取音色列表，使用真实voiceId。mode=ondemand按需、always每次附带语音；emotion=auto自然、happy开心、sad悲伤、calm平静。仅系统音色，不设计新声音。',
+        parameters: Type.Object({ voiceId: Type.Optional(Type.String({ maxLength: 160 })), speed: Type.Optional(Type.Number({ minimum: 0.5, maximum: 2 })),
+          emotion: Type.Optional(Type.String()), mode: Type.Optional(Type.String()) }),
+        async execute(_id, input) { return result(JSON.stringify(await ctx.speech.update(input, ctx.signal))); } },
+    );
     if (ctx.sandbox) customTools.push({
       name: 'cmd', label: 'Sandbox Command',
       description: '在当前用户独立的离线沙箱中执行Bash/Python命令。/work是自己的持久工作目录；不能访问宿主机、其他用户、模型密钥或网络。单次最多30秒，输出有限；修改人物设定用persona工具、笔记用note工具。不要声称沙箱命令能管理服务器。',

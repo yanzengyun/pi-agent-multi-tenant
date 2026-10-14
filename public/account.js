@@ -3,7 +3,11 @@ const errors = { invalid_invite: '邀请已失效、被使用或撤销，请联�
   username_exists: '账号已存在，请换一个或获取原账号的激活邀请。', invalid_username: '账号只能包含字母、数字、下划线和短横线。',
   password_too_short: '密码至少需要12位。', invalid_credentials: '账号或密码不正确。', sb_username_conflict: '笔记用户名已被占用，请换一个。',
   sb_login_update_failed: '笔记登录信息更新失败，请稍后重试。', wrong_password: '当前密码不正确。', login_throttled: '请求较多，请稍后再试。',
-  authentication_required: '登录已过期，请重新登录。' };
+  authentication_required: '登录已过期，请重新登录。', speech_disabled: '语音服务暂未启用。',
+  invalid_voice_preferences: '请检查语速、语气和回复方式。', invalid_voice_id: '请选择可用的系统音色。',
+  voice_catalog_unavailable: '音色列表暂时无法加载，稍后重新打开「声音」即可重试。',
+  voice_update_failed: '声音设置暂未保存，请稍后重试。', voice_preview_busy: '正在试听，请稍候再试。',
+  voice_preview_failed: '试听生成失败，请稍后重试。' };
 async function api(path, method = 'GET', data) {
   const r = await fetch(new URL('.' + path, document.baseURI), { method, credentials: 'same-origin',
     headers: data === undefined ? {} : { 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) });
@@ -26,6 +30,7 @@ function panel(name) {
     const active = button.dataset.panel === name; button.setAttribute('aria-pressed', String(active));
     $('#panel-' + button.dataset.panel).hidden = !active;
   }
+  if (name === 'voice' && !voiceLoaded) void loadVoice().catch(error => { $('#voice-state').textContent = error.message; });
 }
 for (const button of document.querySelectorAll('#account-nav button')) button.addEventListener('click', () => panel(button.dataset.panel));
 function confirmPassword(data) {
@@ -45,6 +50,58 @@ function onForm(id, handler) {
 const statuses = { connected: '已连接', not_bound: '未连接', expired: '登录已过期，请解除连接后重新扫码', disabled: '未启用', ready: '已准备', not_provisioned: '尚未设置', failed: '准备失败', provisioning: '准备中' };
 let attempt = null, timer, inviteToken = new URLSearchParams(location.hash.slice(1)).get('invite');
 let savedPersona = '';
+let voiceLoaded = false, voiceLoading = false, voiceCatalog = [], previewUrl;
+function renderVoices(selected = $('#voice-select').value) {
+  const query = $('#voice-search').value.trim().toLowerCase();
+  const choices = voiceCatalog.filter(voice => voice.id === selected || !query || JSON.stringify(voice).toLowerCase().includes(query));
+  $('#voice-select').replaceChildren(...choices.map(voice => new Option(voice.name, voice.id)));
+  if (choices.some(voice => voice.id === selected)) $('#voice-select').value = selected;
+}
+async function loadVoice() {
+  if (voiceLoading) return;
+  voiceLoading = true; $('#voice-state').textContent = '正在加载声音设置…';
+  $('#voice-save').disabled = true; $('#voice-preview').disabled = true;
+  try {
+    const state = await api('/api/account/voice'); $('#voice-form').hidden = !state.enabled;
+    if (!state.enabled) { $('#voice-state').textContent = '语音服务暂未启用。'; voiceLoaded = true; return; }
+    voiceCatalog = (await api('/api/account/voice/voices')).voices;
+    renderVoices(state.settings.voiceId);
+    const form = $('#voice-form');
+    if (![...form.elements.speed.options].some(option => Number(option.value) === state.settings.speed)) {
+      form.elements.speed.add(new Option(`${state.settings.speed} 倍`, String(state.settings.speed)));
+    }
+    for (const key of ['speed','emotion','mode']) form.elements[key].value = state.settings[key];
+    voiceLoaded = true; $('#voice-state').textContent = '你的声音偏好独立保存。';
+    $('#voice-save').disabled = false; $('#voice-preview').disabled = false;
+  } finally { voiceLoading = false; }
+}
+function selectedVoice(data = Object.fromEntries(new FormData($('#voice-form')))) {
+  return { voiceId: data.voiceId, speed: Number(data.speed), emotion: data.emotion, mode: data.mode };
+}
+$('#voice-search').addEventListener('input', () => renderVoices());
+onForm('#voice-form', async data => {
+  await api('/api/account/voice', 'PUT', selectedVoice(data)); $('#voice-state').textContent = '已保存';
+  notice('声音偏好已保存，之后的语音使用这组设置。');
+});
+$('#voice-preview').addEventListener('click', async () => {
+  const button = $('#voice-preview'); button.disabled = true; $('#voice-state').textContent = '正在生成试听…';
+  try {
+    const response = await fetch(new URL('./api/account/voice/preview', document.baseURI), {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: selectedVoice(), text: $('#voice-form').elements.previewText.value }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      if (error.error === 'authentication_required') { stopQr(); view('login'); }
+      throw new Error(errors[error.error] || '试听生成失败，请稍后重试。');
+    }
+    const audio = await response.blob();
+    $('#voice-player').pause(); if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(audio); $('#voice-player').src = previewUrl; $('#voice-player').hidden = false;
+    $('#voice-state').textContent = '试听已生成；点击播放。要使用这组设置，请保存。';
+  } catch (error) { $('#voice-state').textContent = error.message; }
+  finally { button.disabled = false; }
+});
 $('#agents-content').addEventListener('input', () => { $('#persona-state').textContent = $('#agents-content').value === savedPersona ? '' : '有未保存的修改'; });
 window.addEventListener('beforeunload', event => {
   if (!$('#account').hidden && $('#agents-content').value !== savedPersona) { event.preventDefault(); event.returnValue = ''; }
@@ -68,7 +125,7 @@ async function loadAccount(refreshProfile = true) {
   if (refreshProfile) $('#notes-settings').open = data.silverbullet.status !== 'disabled' && !data.silverbullet.passwordUnified;
   $('#notes-link').hidden = !data.silverbullet.url;
   if (data.silverbullet.url) $('#notes-link').href = data.silverbullet.url;
-  if (refreshProfile) { savedPersona = (await api('/api/account/agents')).content; $('#agents-content').value = savedPersona; $('#persona-state').textContent = ''; }
+  if (refreshProfile) { savedPersona = (await api('/api/account/agents')).content; $('#agents-content').value = savedPersona; $('#persona-state').textContent = ''; voiceLoaded = false; }
   view('account');
 }
 onForm('#register-form', async data => {

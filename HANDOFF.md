@@ -2,6 +2,15 @@
 
 更新时间：2026-10-14。
 
+## 系统音色与个人声音配置第一阶段（2026-10-14）
+
+- 用户指定只做语音增强第一步，不做音色设计。新增个人页「声音」：搜索系统音色、语速、自然/开心/平静/悲伤语气、按需/每次附带MP3、试听及独立保存。MiniMax声音查询实测303系统音色；仅使用system，不把同一Key下其他人的自定义音色开放给用户。未调用voice_design或音乐生成。
+- 偏好存integrations的voice项，由登录身份/微信绑定确定user_id；Speech每次使用独立参数，不改共用默认。试听是认证后的MP3响应，限100字和并发、不会保存设置/创建聊天/发送微信；播放器支持blob且CSP仅增加media-src。新增voice_preferences_read/write，允许用户通过AI修改自己的声音偏好；persona草稿依旧不允许写配置。
+- /voice文字或裸「发个语音」直接走已配置TTS，不调用模型；正常聊天按mode和语音请求自动补音频，明确不要语音时保持文字；每轮准备一次，失败保留成功文字。长回复只朗读开头，仍限制200字/60秒/1MB，MP3附件，不支持完整歌曲或原生气泡。
+- 70项Node测试通过；隔离浏览器真实UI完成音色搜索、试听解码/不保存、保存后刷新、用户隔离、手机390px不溢出，JS/CSP错误0。verify-voice-settings-live.mjs在无私人数据的synthetic用户使用真实模型保存0.75/calm并验证另一用户不变，真实TTS直接/自动各成功、微信发送器为假，未发真实消息。
+- 已update-live上线，备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261014-174942；原用户/绑定/自定义人设摘要及主Pi PID保持。公网用独立synthetic账号验证声音API和真实女声慢速平静MP3试听33204字节成功，账号清理后原用户列表一致。公网认证需Cookie，Nginx清除Authorization；测试不依赖外部Bearer。
+- 原个人主助手独立偏好与微信直接入口由相邻alibaba_host/pi-agent/voice-reply维护，来源发言事件与TTS安装守卫已接入；状态与备份见对应HANDOFF。未给Lucy或主用户自动发送试验音频，微信端实际验收需用户测试。
+
 ## 完全开源与真实凭据核查（2026-10-14）
 
 - 用户明确要求完全开源并核对密钥/key是否上传。GitHub API确认仓库已public、默认main，之前license为null；本轮加入MIT LICENSE及package/package-lock许可证元信息，README移除“未指定”并链接许可证，依赖不变。没有改变仓库可见性或生产服务。
