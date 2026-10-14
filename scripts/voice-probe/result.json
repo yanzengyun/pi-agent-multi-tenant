@@ -1,0 +1,19 @@
+{
+  "testedAt": "2026-10-14T01:09:48.270Z",
+  "target": "lucy",
+  "variant": "pi_connect_exact_amr",
+  "audioFormat": "amr_nb",
+  "sampleRate": 8000,
+  "durationMs": 2940,
+  "bytes": 4710,
+  "uploadType": 3,
+  "messageItemType": 3,
+  "encodeTypeOnWire": null,
+  "playtimeOnWire": null,
+  "apiAccepted": true,
+  "ret": null,
+  "errcode": null,
+  "hasServerMessageId": true,
+  "clientPlaybackConfirmed": false,
+  "clientFeedback": "pending"
+}

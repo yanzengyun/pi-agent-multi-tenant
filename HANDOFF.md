@@ -13,7 +13,7 @@
 
 - 用户明确要求测试GitHub pi-connect的AMR候选。新增scripts/voice-probe，源码复现FILE上传/type3 VOICE消息，encode_type0因omitempty不发，playtime不发，AES base64(hex)，encrypt_type1。
 - 服务器仅安装libopencore-amrnb0（183KB），未重启任何服务。独立目录/home/admin/.local/share/pi-voice-probe，不新建微信登录或轮询器；现有插件保持。
-- Python3.12 OpenCORE AMR-NB编码/解码自测通过：1秒50帧1606字节且解码有非零能量。真实发信等待用户在Lucy发送新“AMR测试”刷新上下文；已通过异步问题请求，未获回复/新消息前不发。成功条件必须由用户确认可播放的气泡，不能仅看API接受。
+- Python3.12 OpenCORE AMR-NB编码/解码自测通过：1秒50帧1606字节且解码有非零能量。用户已确认发送新消息，读取到66秒前的Lucy入站、任务已结束；移除不必要的AMR字面匹配，仍固定Lucy绑定且要求5分钟内上下文。2026-10-14T01:09:48Z已按pi-connect精确载荷真实发送一次（2940ms/4710字节），API接受、有服务端消息ID；客户端确认pending，已询问用户。成功条件必须由用户确认可播放的气泡，不能仅看API接受。
 
 ## 女声与主账号接入（2026-10-14）
 

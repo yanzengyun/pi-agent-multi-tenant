@@ -15,7 +15,7 @@ let binding, inbox;
 if (target === 'lucy') {
   binding = db.prepare("SELECT b.* FROM wechat_bindings b JOIN users u ON u.id=b.user_id WHERE u.username='lucy' AND b.status='connected'").get();
   if (binding) inbox = db.prepare("SELECT i.context_token,r.created_at,r.prompt FROM wechat_inbox i JOIN runs r ON r.id=i.run_id WHERE i.binding_id=? AND i.message_id NOT LIKE 'reminder:%' ORDER BY i.rowid DESC LIMIT 1").get(binding.id);
-  if (!inbox || !/AMR\s*测试/i.test(inbox.prompt) || Date.now() - inbox.created_at > 300000) throw new Error('Send AMR测试 to Lucy first');
+  if (!inbox || Date.now() - inbox.created_at > 300000) throw new Error('Send AMR测试 to Lucy first');
 } else {
   const credentials = JSON.parse(readFileSync('/home/admin/.pi/agent/wechat-assistant/credentials.json'));
   const contextFile = '/home/admin/.pi/agent/wechat-assistant/context-tokens.json';
