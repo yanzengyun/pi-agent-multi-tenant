@@ -13,7 +13,7 @@
 
 - 用户明确要求测试GitHub pi-connect的AMR候选。新增scripts/voice-probe，源码复现FILE上传/type3 VOICE消息，encode_type0因omitempty不发，playtime不发，AES base64(hex)，encrypt_type1。
 - 服务器仅安装libopencore-amrnb0（183KB），未重启任何服务。独立目录/home/admin/.local/share/pi-voice-probe，不新建微信登录或轮询器；现有插件保持。
-- Python3.12 OpenCORE AMR-NB编码/解码自测通过：1秒50帧1606字节且解码有非零能量。用户已确认发送新消息，读取到66秒前的Lucy入站、任务已结束；移除不必要的AMR字面匹配，仍固定Lucy绑定且要求10分钟内上下文。2026-10-14T01:09:48Z已按pi-connect精确载荷真实发送一次（2940ms/4710字节），API接受、有服务端消息ID；用户反馈“啥都没”，确认客户端无新消息/气泡，实验失败；结果已记scripts/voice-probe/result.json。AMR候选不能直接作为修复上线；生产保持已验证的女声MP3附件。该失败只验证这一具体路径，不能据此断言所有微信通道永远不支持语音。补测--complete-fields显式AMR编码5/8kHz/16bit/时长3020ms，2026-10-14T01:15:38Z API接受、有服务端消息ID，客户端反馈pending；见complete-fields-result.json。
+- Python3.12 OpenCORE AMR-NB编码/解码自测通过：1秒50帧1606字节且解码有非零能量。用户已确认发送新消息，读取到66秒前的Lucy入站、任务已结束；移除不必要的AMR字面匹配，仍固定Lucy绑定且要求10分钟内上下文。2026-10-14T01:09:48Z已按pi-connect精确载荷真实发送一次（2940ms/4710字节），API接受、有服务端消息ID；用户反馈“啥都没”，确认客户端无新消息/气泡，实验失败；结果已记scripts/voice-probe/result.json。AMR候选不能直接作为修复上线；生产保持已验证的女声MP3附件。该失败只验证这一具体路径，不能据此断言所有微信通道永远不支持语音。补测--complete-fields显式AMR编码5/8kHz/16bit/时长3020ms，2026-10-14T01:15:38Z API接受、有服务端消息ID，用户确认“确实啥也没有”，补齐字段实验也失败；见complete-fields-result.json。两轮AMR均无客户端消息/气泡，生产保持女声MP3；无需改插件、音色、重启服务或继续重复相同测试。
 
 ## 女声与主账号接入（2026-10-14）
 

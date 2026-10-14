@@ -15,4 +15,6 @@
 
 2026-10-14已真实发送pi_connect_exact_amr：2940ms/4710字节，API接受并返回服务端消息ID；用户反馈“啥都没”：客户端没有出现新消息/语音气泡，实验失败；不能依据API成功将该候选用于生产。详见result.json。
 
-补充实验：`node probe.mjs lucy --complete-fields`在同种AMR载荷中显式发送encode_type=5、bits_per_sample=16、sample_rate=8000、playtime=实际毫秒数，排除候选实现缺字段；2026-10-14T01:15:38Z接口接受（3020ms/4838字节），客户端反馈pending。详见complete-fields-result.json。新上下文最大年龄调整为10分钟，便于两轮用户确认实验；不会重新登录或轮询。
+补充实验：`node probe.mjs lucy --complete-fields`在同种AMR载荷中显式发送encode_type=5、bits_per_sample=16、sample_rate=8000、playtime=实际毫秒数，排除候选实现缺字段；2026-10-14T01:15:38Z接口接受（3020ms/4838字节），用户确认“确实啥也没有”，客户端无消息/气泡，该补充实验也失败。详见complete-fields-result.json。新上下文最大年龄调整为10分钟，便于两轮用户确认实验；不会重新登录或轮询。
+
+最终结论：精确复现pi-connect的AMR请求与补齐编码/时长字段的AMR请求，两轮均API接受、有消息ID，但用户确认微信无消息/气泡。两条路径不适合上线。生产女声MP3保持不变。此结论仅覆盖这两种请求与当前账号/通道，不宣称微信所有接口永远不支持语音。

@@ -15,5 +15,7 @@
   "errcode": null,
   "hasServerMessageId": true,
   "clientPlaybackConfirmed": false,
-  "clientFeedback": "pending"
+  "clientFeedback": "no_new_message_or_voice_bubble",
+  "clientVoiceBubbleVisible": false,
+  "experimentSucceeded": false
 }
