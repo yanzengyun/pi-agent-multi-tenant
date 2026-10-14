@@ -11,3 +11,8 @@ node_modules/
 coverage/
 
 __pycache__/
+
+# Private documentation backups may contain deployment details.
+docs/private-backups/
+/silverbullet.json
+/silverbullet-data/

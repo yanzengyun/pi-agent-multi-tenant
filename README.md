@@ -1,274 +1,166 @@
-# pi-agent-multi-tenant
+# Pi Assistant · 微信多租户个人助手
 
-一键连接微信的多租户个人助手。目标是一个管理员控制台、一个 Pi SDK 后端、按用户隔离的数据，以及共用的 SilverBullet 等基础服务。
+**一键发起微信连接，扫码后拥有自己的 AI 助手。**
 
-**当前版本：可扫码接入的独立服务，已部署。** 管理地址为 `https://123.56.157.198:32651/assistant/`，仅使用后台账号登录（已移除助手页面的浏览器Basic弹窗），后台账号为 admin；后台密码保存在本机 `alibaba_host/config/multi-tenant-login.json` 和服务器 `/home/admin/.config/pi-agent-multi-tenant/login.json`，不进Git。管理员创建用户后让本人扫码，并先在微信发一条消息。真实二维码、模型调用与已有用户微信收发元数据已验证。
+为朋友、家庭或小团队部署一个共享后端：管理员分享邀请，用户注册后自己扫码连接微信。每个人拥有独立的聊天、长期记忆、人物设定和笔记空间，在熟悉的聊天窗口里交流、记录和处理事情。
 
-已增加邀请注册与用户自助页：`https://123.56.157.198:32651/assistant/account`。用户不需要管理员网关口令；管理员在原后台生成7天有效的一次性邀请，用户凭链接设置账号和密码，注册后自动登录个人主页，再绑定微信、设置笔记用户名和人物设定。邀请页只显示注册表单，已使用/失效/缺失邀请单独提示并提供登录入口。个人主页按连接与笔记、人物设定、账号安全分栏；普通用户误进管理台会自动回个人主页，管理员误进个人页会回管理台。公开注册必须有有效邀请，管理员仍可手动创建用户。
+[页面预览](#页面预览) · [快速体验](#快速体验) · [部署指南](docs/deployment.md) · [项目源码](https://github.com/yanzengyun/pi-agent-multi-tenant)
 
-## 已实现
+## 项目亮点
 
-- 管理员登录、创建普通用户、用户列表；没有用户聊天页面。
-- 服务端认证确定身份，客户端传入的 `userId` 不会切换身份。
-- 独立的记忆、聊天、会话恢复和 trace；跨用户的资源 ID 返回 404。
-- 一个 Pi SDK 服务进程，全局串行执行；持久化队列，上限20条，每用户等待上限5条。
-- 使用原版 Pi SDK 1.1.0 创建独立 `AgentSession`，每次运行完成后释放；按用户保存 JSONL 会话。
-- 显式资源和凭据配置，不发现宿主机的 AGENTS、技能、扩展、默认会话或生产记忆。
-- 模型工具限定当前用户的记忆、人物设定、账号入口，以及启用后的笔记、提醒、搜索和语音；没有宿主机 bash/read/write，cmd只在独立沙箱中执行。
-- Trace 保存注入提示词、记忆、SDK消息及工具事件；尚未复用旧 trace 网页，也不宣称已捕获全部原始 HTTP 请求。
-- 管理员可按用户查看最近50次运行，展开提示词、注入记忆、SDK与工具事件、结果和错误；普通用户不能访问管理员接口，错配用户与run ID返回404。
-- 密码 scrypt、会话 token 只存摘要、过期和退出撤销、HttpOnly/SameSite Cookie、请求体与登录并发限制。
-- 管理员按用户生成微信二维码、查看扫码状态、取消和解绑；连接按用户独立长轮询，支持文本和语音转写文本。
-- 可选MiniMax音频回复，以MP3附件发送（`ASSISTANT_TTS=on`），复用现有`MINIMAX_CN_API_KEY`，默认文字；用户说“用语音回复”时，模型调用`voice_reply`。每轮最多一段、200字符、60秒，长回答读摘要。只给当前微信消息发送，网页/人物设定草稿不提供语音工具。
-- 每条微信聊天消息开始执行前，先发送“✅ 已收到，pi 处理中...”，完成后再发送结果；提示最多等待5秒，失败不阻塞任务，不补发迟到提示。网页任务和定时提醒不发送该提示。
-- 微信发送者先校验再写入队列，持久化游标与消息去重；回复失败留在数据库重试。稳定发送ID不代表微信接口提供严格的恰好一次投递，网络故障时仍可能重复回复。
-- 解绑保留微信身份归属，重新绑定必须是原微信用户，不能换人继承记忆。原个人助手身份可加入保护名单，不导入其微信token或聊天。
-- 自动创建 SilverBullet 人类账号、非管理员 Agent 账号、私有 Space 和受限 token；模型只获得当前用户的 `note_read`、`note_write` 工具。
-- 笔记写入使用 ETag 防止覆盖其他修改；管理员可显式查看人类登录信息，Agent token 不返回管理页面或模型。
-- 持久化的一次性／每日文本提醒，管理员页面和模型的 reminder_create/list/cancel 工具均限定当前用户。时间需包含时区，默认北京时间；每日按24小时重复，不调用模型生成提醒。
-- 邀请只存SHA256摘要，可撤销、过期、一次性消费；注册角色固定user。链接token放在URL fragment，注册通过POST提交，避免进入Nginx访问日志中的请求URL。
-- 用户自助设置笔记用户名，主页与笔记使用同一密码，改名保留原Space、Agent token和笔记。用户自设的笔记密码不在应用数据库保留明文，管理员页面不再展示其密码。新注册时笔记密码同步为主页密码；修改主页密码同步修改笔记密码，失败时保留主页旧密码。旧用户在自助页面验证主页密码后主动统一，普通登录不重置原笔记密码。
-- 每用户人物设定（底层AGENTS.md，最多8000字符），数据库为配置来源，镜像写入 `tenants/<uuid>/workspace/AGENTS.md`，后续模型请求显式注入并进入trace。手工修改镜像文件不等于修改配置；不发现宿主机AGENTS、技能或扩展，工具权限不变。
+| 能力 | 使用方式 |
+| --- | --- |
+| **微信扫码接入** | 点击连接、微信扫码确认，再发一条消息开始聊天。支持用户自行绑定，也支持管理员代为展示二维码。 |
+| **人与助手共享笔记** | 在微信说“帮我整理成笔记并保存”，助手写入自己的 SilverBullet 空间；用户在浏览器里继续编辑同一份笔记。 |
+| **多租户管理** | 一个后台管理邀请、用户、微信连接、提醒和运行记录；各用户的聊天、记忆、笔记与工作文件独立保存。 |
+| **可定制的朋友型助手** | 默认自然聊天，适时建议和总结。人物设定可在个人页面编辑、让 AI 起草，或直接在微信中修改。 |
+| **持久记忆与会话** | 跨对话保留用户偏好和会话记录，不需要为每个用户启动一套常驻 Pi 进程。 |
+| **详细运行记录** | 管理员可以查看每次注入的提示词与记忆、工具调用、结果和错误，便于排查问题。 |
+| **独立工作目录** | 可选离线命令沙箱，运行 Bash/Python、保存脚本和文件；用户工作目录跨命令和服务重启保留。 |
+| **搜索、提醒与语音** | 可选 MiniMax 网页搜索、一次性/每日文本提醒，以及按需生成的女声 MP3 回复。 |
 
-- 查询当前日期或时间通过沙箱 `cmd` 执行 `TZ=Asia/Shanghai date`，默认北京时间。多用户后端不开放宿主机cmd/bash；`agent.md`、`AGENTS.md`和人物设定均由固定当前用户的persona工具读写，无需通用文件权限。
-- 人物设定可手动编辑或由网页AI生成草稿后确认保存；草稿运行只开放persona_read，禁止写记忆、笔记、提醒和设定。微信明确要求修改时可调用persona_read/write，固定到当前用户。
-- 未自定义或留空的人物设定使用“自然朋友型”默认：日常聊天简短自然，适时建议和总结，明确要求时帮用户整理并保存笔记。默认内容在个人页面可查看和修改；现有自定义设定优先，不迁移或覆盖用户配置。
-- `account_info`为只读工具，返回当前用户的真实笔记网址、笔记用户名、密码是否与主页共用、个人页面及本轮可用工具。入口由后台账号映射和公网Origin生成，不允许模型选择其他用户，不返回密码/token；未配置的入口和功能不编造。用户可直接问“我的笔记在哪”“个人页面网址是什么”“你能做什么”。
+共享笔记指**用户与自己的助手共用一份笔记**。SilverBullet 服务共用，每个用户有独立 Space 和访问权限。
 
-## 仍需实现
+## 从邀请到微信聊天
 
-1. 微信长时间运行、会话过期和异常网络下的重连验证。
-2. 多人容量及长时间运行验证，服务器资源上限已配置，不作为容量承诺。
-3. 定时模型复盘和复杂周期，目前只支持一次性／每日文本提醒。
-4. 受限健康/投资工具、历史关键词搜索、用户禁用、额度统计和限额；运行记录页面后续补刷新与筛选。
-5. 需要通用脚本时增加独立沙箱；扩容前完成容量及完整恢复演练。
+1. 管理员生成邀请链接，分享给用户。
+2. 用户设置账号和密码，注册后自动进入个人页面。
+3. 用户点击“扫码连接微信”，用自己的微信扫码并确认。
+4. 在微信发一条消息，开始使用助手；个人页面继续用于管理连接、笔记、人物设定和密码。
 
-管理员可直接建用户并展示微信二维码，也可发送邀请让用户自己注册、绑定。自助页只管理账号、微信、笔记登录与偏好，没有网页聊天。用户聊天继续使用微信，笔记使用自己的 SilverBullet 页面。
+邀请链接默认 **7 天有效、仅可使用一次**。用户只需自己的登录信息；管理员也可以为已有账号生成激活邀请。
 
-已有用户需要进入自助页时，在邀请用途选择“激活已有账号”。接受邀请会设置该账号的网页登录密码，保持原UUID、微信归属和私人数据，撤销旧网页登录会话；用户名仍是原账号名。重新生成或修改密码会撤销旧的已有账号激活邀请。只把此类邀请交给原账号本人。
+## 页面预览
+
+以下是当前应用的实际界面，使用隔离的演示账号和数据。扫码图为不可绑定的示意二维码，不包含生产账号、有效邀请或凭据。点击图片可查看大图。
+
+| 管理页面 | 邀请注册页面 |
+| :---: | :---: |
+| [![管理页面](docs/images/admin.png)](docs/images/admin.png) | [![邀请注册页面](docs/images/invitation.png)](docs/images/invitation.png) |
+| 管理用户、生成邀请、查看连接状态和运行记录 | 一个注册表单，注册成功后直接进入个人主页 |
+
+| 个人页面 | 用户微信扫码页面 |
+| :---: | :---: |
+| [![个人页面](docs/images/account.png)](docs/images/account.png) | [![用户微信扫码页面](docs/images/wechat-connect.png)](docs/images/wechat-connect.png) |
+| 管理微信连接、打开笔记、修改人物设定和密码 | 手机浏览器也可使用的扫码接入流程 |
+
+<details>
+<summary>查看人物设定页面</summary>
+
+[![人物设定页面](docs/images/persona.png)](docs/images/persona.png)
+
+默认设定可直接编辑，也可让 AI 生成草稿；确认保存后才生效。
+
+</details>
+
+## 可以对助手说什么
+
+```text
+帮我把今天讨论的旅行计划整理成笔记并保存。
+在刚才那篇笔记里补充预算，保留原来的内容。
+我的笔记网址是什么？用什么账号登录？
+我的个人页面在哪？你能帮我做什么？
+记住我喜欢简短的中文回答。
+明天下午三点提醒我带资料。
+搜索一下这个问题最近有哪些公开资料。
+在我的工作目录写一个 Python 脚本，处理这份数据。
+请用语音回复一段简短的总结。
+```
+
+工具按部署配置启用。笔记在用户明确要求时保存；更新已有页面先读取并使用 ETag，避免覆盖其他修改；写入成功后才确认。助手通过只读 `account_info` 查询当前用户的真实入口和可用功能。
 
 ## 架构
 
 ```mermaid
-flowchart TD
-  Admin[管理员页面] --> API[Node.js 后端 / 认证与用户管理]
-  WeChat[微信多连接入口 / 发送者校验] --> API
-  API --> Queue[持久化队列 / 并发1]
-  Queue --> SDK[原版 Pi SDK / 按需 AgentSession]
-  SDK --> Memory[当前用户记忆工具]
-  SDK --> Search[MiniMax 官方搜索接口]
-  API --> DB[SQLite / 用户、聊天、队列、trace]
-  SDK --> Sessions[按用户隔离的 SDK JSONL]
-  API --> SB[共用 SilverBullet / 各自 Space 与 Agent token]
+flowchart LR
+  Admin[管理员后台] --> API[共享 Node.js 后端]
+  Account[邀请与个人页面] --> API
+  WeChat[用户各自的微信连接] --> API
+  API --> Queue[SQLite 持久化队列]
+  Queue --> Pi[Pi SDK / 按用户独立会话]
+  Pi --> Memory[各自的记忆与人物设定]
+  Pi --> Notes[SilverBullet / 各自 Space]
+  Pi --> Sandbox[可选命令沙箱 / 各自持久目录]
+  Pi --> Tools[搜索 / 提醒 / MP3]
+  API --> Trace[按用户保存的运行记录]
 ```
 
-这是应用层数据隔离。服务端运行账号及主机管理员仍能读取数据；不要把此版本当作允许用户运行任意宿主机命令的沙箱。
+- **一个共享后端**：Pi SDK 按需创建用户自己的 AgentSession，结束后释放。当前模型任务全局串行执行。
+- **用户之间隔离**：身份由服务端登录状态或微信绑定确定，模型不能通过提供 `userId` 切换到其他用户。
+- **基础设施共用**：SQLite、SilverBullet 和命令执行服务集中部署，记忆、会话、笔记权限与持久目录按用户划分。
+- **权限保持有限**：命令只在离线沙箱执行；用户人物设定不能开启宿主机权限、增加工具或访问其他用户。
 
-## 本地运行和测试
+服务端与主机管理员仍能读取运行数据；运行记录也可能包含私人内容。这里的隔离保护不同用户之间的访问。
 
-Node.js >=22.19。第二阶段增加本地生成二维码依赖，先安装锁定依赖。自动测试使用模拟微信，不扫描或绑定真实账号。
+## 快速体验
+
+需要 **Node.js ≥ 22.19**。先启动不调用真实模型、不连接微信的本地演示模式：
 
 ```sh
+git clone https://github.com/yanzengyun/pi-agent-multi-tenant.git
+cd pi-agent-multi-tenant
 npm ci --omit=peer --ignore-scripts --no-audit --no-fund
-npm test
 cp .env.example .env
-# 在 .env 设置一个至少12位的独立 ASSISTANT_ADMIN_PASSWORD。
+```
+
+在 `.env` 中设置自己的管理员密码，至少 12 位：
+
+```dotenv
+ASSISTANT_ADMIN_PASSWORD=replace-with-your-own-long-password
+```
+
+启动：
+
+```sh
 node --env-file=.env src/main.mjs
 ```
 
-管理台：`http://127.0.0.1:32214`，初始管理员名 `admin`。服务默认 mock 模式，页面会明确标注；mock 不会调用真实模型。初始密码只用于数据库第一次创建管理员，不会在重启时覆盖已有密码。
+打开 `http://127.0.0.1:32214/`，管理员账号为 `admin`。密码只在首次初始化数据库时使用；修改环境变量不会重置已有管理员密码。
 
-`.env`、`.data/`、数据库、会话和凭据不入 Git。数据根目录0700、数据库0600；服务启动设置umask077。
+演示模式可以体验管理后台、邀请注册、个人页面和人物设定。要接入真实模型、微信和笔记，请继续阅读 [部署指南](docs/deployment.md)。
 
-## 真实 Pi 模式
+## 接入真实助手
 
-运行 `npm run setup:pi` 安装独立的锁定 SDK，默认使用 `sdk-runtime/node_modules/`。SDK 1.1.0 的部分依赖使用宽松版本范围，会解析到不兼容的 1.2.0，因此 `sdk-runtime/package.json` 同时固定其配套包，不只固定顶层版本。也可显式设置 `PI_SDK_MODULE` 为已验证的 SDK 入口。不要重装或升级生产 Pi 来满足开发依赖。
+安装锁定的 Pi SDK：
 
-设置：
+```sh
+npm run setup:pi
+```
+
+在私有 `.env` 中配置：
 
 ```dotenv
 ASSISTANT_ENGINE=pi
-# 留空使用 sdk-runtime；如指定其他路径，需验证完整配套依赖版本。
-PI_SDK_MODULE=
-ASSISTANT_MODELS_FILE=/path/to/models.json
-MINIMAX_CN_API_KEY=<通过私有环境文件提供>
+ASSISTANT_MODELS_FILE=./models.json
+MINIMAX_CN_API_KEY=your-private-api-key
+ASSISTANT_WECHAT=on
 ASSISTANT_SEARCH=on
+ASSISTANT_TTS=on
 ```
 
-本仓库 `models.json` 无凭据，配置 MiniMax M3.1 Flash Preview、medium、每次最多8192输出 tokens。凭据由 `ModelRuntime` 显式提供，不切换进程的 HOME、cwd 或环境变量。
+模型、搜索和语音当前集成 MiniMax；每个用户共用服务端提供的密钥。公网使用需配置 HTTPS、固定 Origin 和安全 Cookie。笔记需要独立配置 SilverBullet，命令工具需要单独安装沙箱执行服务；详见 [部署指南](docs/deployment.md)。
 
-搜索直接调用已经验证过的官方 `/v1/coding_plan/search` 接口，使用一个受限 SDK 工具，避免每个会话重复启动 MCP 子进程。当前所有用户共用后台提供的模型/搜索密钥；按用户凭据与计量属于后续版本。
+## 当前边界与后续方向
 
-## 数据与接口
+- 用户在微信聊天，网页负责账号与配置；当前没有网页聊天窗口。
+- 语音回复是 **MP3 附件**，当前没有可用的原生微信语音气泡。
+- 提醒支持一次性和每日文本投递；定时模型复盘与复杂周期尚未实现。
+- 命令沙箱默认预建 8 个持久工作区，每个约 100MiB 可用；名额可扩容，并非注册用户总数限制。单次执行最多 30 秒、192MiB 内存，直接联网关闭。
+- 目前适合从少量受邀用户开始；并发、容量、长期重连与资源配额需按实际负载验证。
+- 后续方向：通用一键部署、用户计量与配额、更多模型和工具适配。开源许可证尚未指定。
 
-数据根目录默认 `.data/`：
-
-```text
-assistant.sqlite                 用户、token摘要、记忆、聊天、队列、trace
-tenants/<服务端生成的UUID>/
-  workspace/                    独立工作目录
-  sessions/                     Pi SDK原生JSONL会话
-  agent/                        独立SDK配置/运行状态
-```
-
-| 接口 | 权限与作用 |
-|---|---|
-| `POST /api/login`、`POST /api/logout` | 登录、撤销当前会话 |
-| `GET /api/admin/users`、`POST /api/admin/users` | 仅管理员，列出/创建普通用户 |
-| `GET/PUT /api/memory` | 当前用户的记忆 |
-| `GET/POST /api/conversations` | 当前用户的会话 |
-| `GET /api/conversations/:id/messages` | 当前用户的聊天 |
-| `POST /api/conversations/:id/runs` | 提交运行，立即返回202与run ID |
-| `GET /api/runs/:id`、`GET /api/runs/:id/trace` | 当前用户的运行与trace |
-| `POST /api/admin/users/:id/wechat/login` | 管理员生成当前用户二维码 |
-| `GET/DELETE /api/admin/users/:id/wechat/login/:attempt` | 管理员查看或取消扫码 |
-| `DELETE /api/admin/users/:id/wechat` | 管理员解绑，保留原身份归属 |
-| `GET/POST /api/admin/users/:id/silverbullet` | 管理员查看状态或配置 Space |
-| `POST /api/admin/users/:id/silverbullet/credentials` | 管理员显式查看人类登录信息 |
-| `GET /api/admin/users/:id/runs` | 管理员查看指定用户最近50次运行 |
-| `GET /api/admin/users/:id/runs/:runId/trace` | 管理员查看指定用户运行详情，错配ID返回404 |
-| `GET/POST /api/admin/users/:id/reminders` | 管理员查看／添加对应用户提醒 |
-| `DELETE /api/admin/users/:id/reminders/:id` | 管理员取消对应用户提醒及尚未投递的提醒 |
-| `GET/POST /api/admin/invites`、`DELETE /api/admin/invites/:id` | 管理员查看／生成／撤销邀请 |
-| `POST /api/invitation`、`POST /api/register` | 验证邀请及受邀注册，无有效邀请不能注册 |
-| `GET /api/account`、`GET/PUT /api/account/agents` | 普通用户自己的状态及人物设定 |
-| `POST /api/account/password` | 校验旧密码后同步修改主页和笔记密码，撤销旧会话 |
-| `POST /api/account/persona-assist`、`GET /api/account/persona-assist/:runId` | 当前用户的AI人物设定草稿，生成不保存 |
-| `/api/account/wechat/...` | 已登录用户自己的扫码状态及绑定操作 |
-| `POST /api/account/silverbullet/login` | 验证主页密码，修改笔记用户名并统一密码；不接受其他用户ID |
-| `GET/PUT /api/notes/:encodedPage` | 当前用户的笔记，写入已有笔记需 ETag |
-
-Cookie供管理台使用，Bearer供集成/测试使用。用户权限不接受请求正文、URL参数或模型输出中的身份声明。每次查询与工具闭包都绑定认证用户。
-
-重启后继续执行等待任务；已开始但未完成的任务标为 interrupted，不自动重放，以免重复副作用。运行超过120秒发出abort，等待实际引擎结束后才开始下一个任务，不通过并行“绕过”超时。引擎错误详情仅保存在对应用户trace，已知模型密钥会脱敏。
-
-## 独立服务器开发环境
-
-服务器恢复并确认个人助手正常后，才执行远程部署。`scripts/deploy-dev.py` 是现有主机的开发适配器，只重启独立开发 tmux，但会安装依赖并读取现有私有模型环境；需先确认开发队列空闲和服务器资源充足。源码归档不含真实数据或凭据。它生成个人微信身份保护名单，仅记录身份ID，不复制微信token。
-
-- 源码：`/home/admin/pi-agent-multi-tenant-dev`
-- 独立状态：`/home/admin/.local/share/pi-agent-multi-tenant-dev`
-- 私有管理员登录文件：`/home/admin/.config/pi-agent-multi-tenant-dev/login.json`，0600
-- 独立tmux：`pi-multi-tenant-dev`
-- 监听：仅 `127.0.0.1:32214`，没有修改公网Nginx路由
-- 现有个人助手：`pi-wechat`，保持原状
-
-管理台可经SSH隧道访问。上线前应配置 HTTPS、`ASSISTANT_SECURE_COOKIES=on` 和固定 `ASSISTANT_ORIGIN`；此开发入口不直接开放公网。
-
-## 管理员删除用户（已上线）
-
-管理台每个普通用户提供「删除用户」，输入该用户名二次确认。管理员账号不能删除。正在执行模型任务或更新笔记凭据时返回忙碌，等待结束后再操作。
-
-删除分两步：先在SQLite持久化停用标记，撤销登录会话与激活邀请、取消排队任务和提醒；再停止微信轮询/投递，等待未结束的扫码检查，处理外部资源。旧手机微信中已经发送的消息不会远程撤回。
-
-- 应用：清理该用户的聊天、运行trace、记忆、人物设定、SDK会话、缓存MP3、绑定及所属目录；清理微信身份归属后可以重新邀请注册，同名账号会获得新UUID，不会继承旧记忆。
-- 沙箱：调用现有runner的`/release`清空该用户工作文件并释放槽位，不重启runner，也不影响其他用户文件。
-- 笔记：保留旧文件为服务器私有归档。将所属Space设为`access:none`、清空members、关闭shell并标记已删除用户，随后删除具有该UUID归属标记的人类/Agent账号，再回读确认。它不尝试永久删除旧笔记，也不按名称猜测删除其他人的账号。
-- 归档索引：`/home/admin/.local/share/pi-agent-multi-tenant/data/deleted-users/<uuid>.json`记录原用户名、UUID、笔记文件夹和Space ID，不存聊天正文、密码或token。原笔记目录仍为`/opt/pi-agent-multi-tenant-sb/data/spaces/pi-tenants/<uuid>`。管理员需要恢复或永久清理时，以该索引核对归属；不自动分配给新用户。
-- 历史备份：按现有备份策略保留，不宣称删除操作擦除了备份或SQLite底层历史字节。
-
-外部清理失败不会返回删除成功；账号保持停用，在用户列表显示「重试清理」。服务重启后停用状态保留，管理员可继续重试；没有自动重新启用或自动后台重试。笔记权限的处理是否完成以实际清理结果为准，失败时不能假定所有外部权限已经撤销。
-
-2026-10-14恢复联网后已上线：完整62项Node测试和5项Python沙箱池测试通过。公网浏览器验收包含删除确认、旧主页/笔记登录拒绝；`scripts/verify-deletion-live.mjs`用自己的未绑定synthetic账号实际写入沙箱、删除账号并确认名额释放，真实SB账号清除、Agent token访问拒绝、笔记文件仍保留于私有归档。身份/绑定摘要与原个人Pi进程检查保持一致，测试账号已清理；测试笔记归档为预期保留物。报告见`test/deletion-live-verification.json`。
-
-## 当前上线部署
-
-`scripts/deploy-live.py` 部署到 `/home/admin/pi-agent-multi-tenant-live`，状态为 `/home/admin/.local/share/pi-agent-multi-tenant/data`，私有配置为 `/home/admin/.config/pi-agent-multi-tenant`。它与旧开发实例、个人Pi的状态分开。`pi-multi-tenant.service` 已启用开机启动，异常退出自动重启；MemoryHigh=256MiB、MemoryMax=384MiB、CPUQuota=50%，超限可能终止本后台，不会借此扩大个人助手权限。
-
-后台仅监听127.0.0.1:32215，`ASSISTANT_BASE_PATH=/assistant`、Secure Cookie、固定Origin均已启用。Nginx32651的整个/assistant/路径关闭Basic认证，由应用自己的登录Cookie和服务器管理员/用户权限校验保护API。匿名管理API返回401，已登录普通用户访问管理API返回403，不触发浏览器密码弹窗；个人trace仍在原根路径使用原Basic保护。新笔记容器 `silverbullet-multi-tenant` 监听127.0.0.1:32216，数据为 `/opt/pi-agent-multi-tenant-sb/data`，restart=unless-stopped，限制128MiB/0.25CPU。
-
-`/users/<uuid>/` 使用SilverBullet自身账号及Space权限，**不共享管理员网关口令**。笔记用户可用其人类账号登录自己的空间；后台使用应用管理员登录；个人trace仍要求原管理员网关认证。Agent token只用于服务器内部访问。原生认证路由 `/.auth/central/` 也转发到笔记服务；server-config.primaryUrl必须为公网Origin，不能填内部loopback地址，否则浏览器跳转失败。内部管理请求使用公共Host和HTTPS代理头。路由位于 `/etc/nginx/pi-app-routes.d/pi-multi-tenant.conf`。
-
-重新部署会短暂停止本后台。脚本拒绝队列中有运行或等待任务的部署，先检查可用内存，恢复后再启动。不要同时启动开发实例导入正式状态，或重载个人Pi来更新本项目。部署失败可能需要人工恢复，当前脚本不是支持原子回滚的发布系统。
-
-仅更新源码使用 `scripts/update-live.py`：队列空闲后停止独立后台，备份数据库、源码和Nginx路由到私有 `backups/`，更新后检查健康、原用户/绑定和个人Pi PID。失败时恢复原代码及路由，不覆盖在线数据库；此脚本不安装或升级依赖。
+## 开发与文档
 
 ```sh
-systemctl status pi-multi-tenant
-journalctl -u pi-multi-tenant --no-pager -n 30
-docker ps --filter name=silverbullet-multi-tenant
+npm test
+python3 -m unittest discover -s sandbox -p 'test_*.py'
 ```
 
-提醒到期时，如果微信未连接或用户还没发过消息，会保留为 waiting_for_wechat；有可用上下文后投递。完成状态表示已排入持久化发送队列，不代表微信已送达。离线期间错过多次每日提醒只补一条，不补发全部历史日期。微信接口拒绝旧上下文或token失效时可能需要用户再发消息或重新扫码；不保证任意时长的主动通知。
+- [部署、配置、备份与迁移](docs/deployment.md)
+- [页面截图说明与重新生成](docs/screenshots.md)
+- [轻量沙箱调研与设计](docs/sandbox-research.md)
+- [微信语音现状](docs/wechat-voice-options.md)
 
-### 微信与 SilverBullet 配置
+技术栈：Node.js、原生 SQLite、Pi SDK、SilverBullet、Bubblewrap（可选）。仓库中的 `scripts/deploy-*` 保留既有环境的运维脚本，使用前必须调整目标地址、账号和路径；通用部署以文档为准。
 
-设置 `ASSISTANT_WECHAT=on` 才会请求真实微信二维码。`ASSISTANT_WECHAT_PROTECTION` 指向私有JSON，格式为 `{"protectedBots":[],"protectedUsers":[]}`；把现有个人助手身份加入其中，测试时使用另一个微信账号。已有保护名单仍不能防止用户扫码本身在微信侧造成的登录变化，因此不要用生产微信做开发扫码实验。
-
-`ASSISTANT_SB_CONFIG` 指向私有JSON，包含 `baseUrl`、可选 `publicUrl`、`username`、`password`。例如地址为 `http://127.0.0.1:32216`，账号为独立开发 SB 管理员；文件权限0600，密码不放 Git。开发脚本 `scripts/deploy-sb-dev.py` 创建独立容器 `silverbullet-multi-tenant-dev`、回环端口32216、状态目录 `/opt/pi-agent-multi-tenant-sb-dev/data`，限制128MiB和0.25CPU，不修改个人 SilverBullet。其资源上限尚未做负载验收。
-
-生产方案可以共用一个 SilverBullet 实例，通过每个用户的 Space 和账号隔离；开发验证先使用独立实例。每个 Space 的匿名权限为 none，只有对应人类与 Agent 账号具有 write 权限，runtime API 和 shell 关闭。
-
-### 备份、恢复和迁移
-
-先正常停止本项目服务，等待队列和连接关闭，再备份整个 `ASSISTANT_DATA_DIR`，包括 SQLite、WAL/SHM（若仍存在）和 `tenants/` 下的 SDK 会话。数据库包含微信token和 SB 凭据，是私有运行数据，不能上传 Git。同步备份独立私有配置、模型环境文件和对应 SilverBullet 的完整 `/data`；Space、账号、token 与数据库需要匹配。
-
-迁移到新主机后安装锁定依赖，恢复以上目录及权限，更新 `baseUrl`、`publicUrl`、数据路径与HTTPS入口，然后启动一个后端实例。不要让旧新两个实例同时使用同一组微信绑定或同一个 SQLite 文件。等待任务会恢复，执行中任务标记 interrupted，不自动重复执行；待回复消息会恢复投递。微信token失效时需原用户重新扫码。
-
-## 验证结果
-
-2026-10-13，43项Node自动测试及5项Python工作区池测试通过，覆盖认证、权限、跨用户记忆/聊天/run/trace、Origin、请求体限制、串行队列、失败恢复、超时、扫码取消/过期/身份保护、发送者校验、投递重试、重启恢复、管理员trace权限、提醒持久化、时区/日期校验、漏执行合并，以及邀请、用户自助AGENTS隔离、笔记账号改名与丢失响应恢复。
-
-独立服务器的真实 Pi SDK 测试已通过：两个虚构用户调用memory_read，返回各自测试代号，系统记忆注入正确；跨用户trace404；恢复SDK历史正确；官方搜索成功。生产个人助手的进程与配置未变，原trace HTTP200。报告见 `test/live-verification.json`，没有私人聊天正文或密钥。
-
-开发服务测试后的RSS约160MiB，是两名虚构用户串行测试的测量，不能当作多人容量承诺。现有小服务器先保持并发1；规模增加后再评估数据库迁移、后端副本和工具沙箱。
-
-第二阶段真实 SilverBullet 2.12.0 隔离容器测试通过：两用户账号和 Space、真实 Agent token 跨 Space 拒绝、匿名拒绝、ETag 冲突和幂等配置；真实 Pi SDK 的笔记写入、读取及跨用户 trace 拒绝也通过，见 `test/sb-live-verification.json`。服务器 `scripts/verify-live.mjs` 已验证真实模型记忆工具、提醒工具加载、独立SB隔离及真实微信二维码，未扫码或向微信发测试消息。
-
-公网TLS验证、匿名401、登录、Secure且限定路径的Cookie及退出撤销已通过。浏览器验收使用临时公开Playwright容器，程序见 `scripts/verify-ui.mjs`、`scripts/verify-ui-container.py`；生成的虚构账号通过 `cleanup-ui-probe.py` 限定所有权后清理。此检查不代替真人微信收发验收。
-
-`verify-invites-ui.mjs` 已实测无需管理员口令的邀请注册、拒绝重复邀请、人物设定保存、AI只读草稿生成、用户自选笔记用户名并登录、用户密码不保留、扫码PNG、统一密码修改后重新登录笔记与旧网页会话撤销；用户访问管理接口403、个人trace401，JS错误0。真实Pi模型上下文已验证AGENTS内容注入且bash/read/write/edit不在工具名单。后续真实用户扫码及回复发送确认已有服务器元数据验证，未导出私人聊天正文。
-
-后续会话先读 [HANDOFF.md](HANDOFF.md)。
-
-2026-10-13 笔记认证排查：浏览器验证弹窗来自根路径原生认证请求落入管理员Basic网关，其后还有错误的primaryUrl内部地址。修复专用认证路由及公网Origin后，浏览器验收检查整个笔记导航无WWW-Authenticate挑战，登录后实际读取自身index.md成功；该历史阶段后台与个人trace继续401保护；2026-10-14助手路径已改为应用登录，个人trace仍保留Basic。
-
-
-## 命令沙箱与工作区复用池（已上线）
-
-多用户Pi使用cmd工具执行Bash/Python，默认目录为/work，直接联网关闭。当前日期和北京时间通过cmd运行date查询，不再提供time_now；人物设定仍由persona_read/write保存并同步用户自己的AGENTS.md，笔记由note工具操作。沙箱的文件目录与Pi的SDK会话/凭据目录分开，不把模型密钥或SB管理账号放进命令环境。
-
-执行服务为pi-sandbox.service，Linux用户pi-sandbox，通过/run/pi-sandbox/runner.sock接受后端请求；主后端仅增加pi-sandbox-client辅助组。无公网沙箱端口，无Docker管理权限。root管理安装，实际用户命令为非root。Ubuntu AppArmor仅为/usr/bin/bwrap增加定向userns策略，未关闭全局限制。
-
-池预建8个128MiB ext4磁盘镜像槽位，约100MiB可用于用户文件；UUID绑定保存在/var/lib/pi-sandbox/slots/owners.json。槽位一旦绑定仅用于该用户，跨命令及执行服务重启保留文件。每次命令创建全新mount/PID/network/user namespace和seccomp环境，复用只读/usr运行依赖及用户持久目录，没有常驻Shell进程池。已测简单命令中位约105ms（前一轮119ms），未把这个值当所有脚本的性能承诺。
-
-磁盘镜像在/opt/pi-sandbox/disks/，通过独立fstab条目启动挂载；执行服务RequiresMountsFor依赖这些卷，未挂载时不启动。耗尽槽位返回sandbox_pool_full，不回退宿主机执行。扩容需一起增加镜像/挂载、调整安装脚本与PI_SANDBOX_POOL_SIZE，不能只增大环境数字。
-
-全局最多1条命令，单任务192MiB内存、0.5CPU、64进程、30秒、原始stdout/stderr合计32KiB；整个执行服务256MiB内存上限。超时、取消和输出超限杀掉任务cgroup，防止遗留子进程。只读系统依赖，命令环境变量清空后按允许列表设置，socket/ptrace/新增namespace/io_uring等受seccomp限制。Bubblewrap仍共享宿主机内核，扩大到陌生用户任意代码前评估gVisor或独立执行节点。
-
-首次安装与启用顺序：
-
-```sh
-python3 scripts/deploy-sandbox.py
-# 将verify-sandbox.py在服务器运行，先验收隔离和资源限制。
-python3 scripts/enable-sandbox.py
-python3 scripts/update-live.py
-```
-
-安装/更新执行服务需确认无沙箱任务；update-live还会确认模型队列空闲、备份原状态并检查个人Pi不变。deploy-sandbox只控制独立执行服务，不重启个人Pi、SilverBullet或Docker。后端更新失败会恢复原代码；独立沙箱及其卷不随代码回滚删除。若只停用cmd，移除主服务10-sandbox.conf中的socket环境变量并在队列空闲时重启多用户后端，保留磁盘数据。
-
-运维：
-
-```sh
-systemctl status pi-sandbox pi-multi-tenant
-journalctl -u pi-sandbox --no-pager -n 30
-sudo curl --unix-socket /run/pi-sandbox/runner.sock -H 'Content-Type: application/json' -d '{}' http://localhost/status
-```
-
-备份时等沙箱空闲并停止执行服务，然后备份owners.json及各slot/work文件目录（保留符号链接、不跟随链接），配合助手SQLite和各用户SDK目录备份。恢复到同规格空槽位，保留UUID到槽位映射、恢复目录属主pi-sandbox，再启动执行服务。迁移时保留当前助手目录路径，改变路径还需调整SDK会话路径映射。运行中直接复制挂载着的磁盘镜像不作为一致性备份方式。
-
-真实验收：verify-sandbox.py测试文件复用、用户隔离、网络/宿主机密钥不可访问、符号链接、内存/磁盘/输出上限、超时和取消及子进程清理；verify-user-sandbox.mjs用普通合成账号验证模型通过cmd查询时间、调用persona_read/write和运行Python，并清理测试账号/Space/槽位。真实服务重启后文件复用和二进制输出传输也通过。报告见test/sandbox-live-verification.json。所有测试未通过真实微信发送消息。
-
-
-## 微信语音回复部署与验证
-
-- 接口：MiniMax `https://api.minimax.cn/v1/t2a_v2`，`speech-2.8-turbo`，默认音色`female-tianmei`（甜美女性）；直接生成MP3、24kHz/64kbps，微信上传类型3（FILE）、消息类型4（FILE）；附件名voice-reply.mp3。原生VOICE气泡路径已停用，因为API成功但实际客户端未显示。接口文档：https://platform.minimax.cn/docs/api-reference/speech-t2a-http 。
-- `/home/admin/.config/pi-agent-multi-tenant/env`增加`ASSISTANT_TTS=on`后重启多用户服务。密钥继续由原启动器从`/home/admin/.config/pi-agent/env`加载，不新建或复制密钥，不修改个人Pi进程。
-- 更新代码用`python3 scripts/update-live.py`，锁文件变化时安装独立后端依赖，SDK运行目录保持独立。新增SQLite表`wechat_voice`自动创建，无需手工迁移。待发送音频及CDN引用存于私有库，投递完成/取消后删除；需随数据库备份。音频失败可重试；文字成功后不因语音重试而重复发送，已上传的音频不会重复合成。网络响应丢失仍可能重复语音，稳定client_id不构成严格恰好一次保证。
-- `scripts/verify-speech-live.mjs`仅用独立临时库与虚构微信用户，调用真实模型/TTS并检查MP3格式、工具trace与文字+音频outbox；加`--verify-upload`用现有连接进行一次真实CDN上传，不发送真实微信聊天消息。启动前由admin加载原私有模型env。
-- 原VOICE路径真实合成/上传/API接受均成功，但Lucy实际收不到语音；已改为腾讯官方插件使用的FILE音频附件路径，不能再将协议里的VOICE类型当成可靠的气泡功能。微信客户端实际收到和播放MP3附件仍需发送“请用语音回复一句你好”验收。原个人Pi插件仍维持原功能，本次只启用多用户助手的TTS。
-
-
-原生语音气泡限制：Lucy在2026-10-14的实测中voice_reply成功（14.26秒），接口接受但客户端没有显示。腾讯仓库同症状反馈：https://github.com/Tencent/openclaw-weixin/issues/215 ，官方文件发送实现：https://github.com/Tencent/openclaw-weixin/blob/main/src/messaging/send.ts 。尚无官方结论证明是账号权限、隐藏字段或其他服务端限制。现在使用MP3附件；trace记录`audio_api_accepted`并明确`clientPlaybackConfirmed=false`，接口接受不代表客户端收到/可播放。
-
-音色：默认女声female-tianmei。设置启动环境ASSISTANT_TTS_VOICE可替换为官方voice_id；重启服务后生效。原个人Pi的同名工具安装说明见相邻仓库alibaba_host/pi-agent/voice-reply/README.md。用户已确认Lucy收到MP3附件，微信会按文件处理，仍需下载/打开，不能承诺原生气泡。
+`.env`、数据库、会话、凭据和生产文档备份不应进入源码仓库。

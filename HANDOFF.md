@@ -2,6 +2,13 @@
 
 更新时间：2026-10-14。
 
+## README 面向开源整理与页面截图（2026-10-14）
+
+- 用户要求备份原README、改成面向开源的介绍，突出微信扫码、人与助手共享笔记、多租户管理并展示管理/邀请/个人/扫码页面。旧README逐字备份到本机docs/private-backups/README.production-20261014-151934.md（600，已gitignore），服务器另存私有documentation-backups。新版README不含真实生产IP/账号凭据路径，通用部署使用example域名；没有修改许可证或仓库可见性，README如实注明许可证尚未指定。
+- 新README包含亮点表、邀请接入流程、5张截图、架构、mock快速体验、真实模型配置和当前边界。补docs/deployment.md通用部署/HTTPS/SilverBullet/常驻服务/沙箱边界/备份迁移，以及docs/screenshots.md说明截图来源和再生成。共享笔记明确为用户与自己的助手共用，各用户仍独立Space，不宣称跨用户共享已实现。
+- scripts/capture-readme.mjs在隔离临时后端/SQLite通过真实当前UI截图，演示账号demo_alice/demo_bob，mock模型/笔记状态、不可绑定example二维码；不使用生产登录或数据，不发微信、不生成真实邀请。截图admin/invitation/account/wechat-connect/persona位于docs/images，已逐张检查中文字体、布局及无私人数据，JS错误0；首次清理双重close已修正，重跑通过。
+- 文档相对链接/fence、PNG格式、备份与旧HEAD摘要、diff/JS语法检查通过。按README的node --env-file启动独立临时mock服务，实际health200和admin登录通过、正常退出。只是文档与截图工具改动，未重启生产服务；源码/文档与私有原README备份收尾同步服务器和GitHub。
+
 ## 多用户默认朋友设定与笔记入口（2026-10-14，已上线）
 
 - 用户选择自然朋友型，要求默认会聊天、适时建议总结，以帮朋友记笔记为特色，并能提供自己的笔记/个人页面入口及功能介绍。新增src/persona.mjs默认设定；无自定义/留空时动态使用，页面、persona_read与模型注入一致，现有自定义设定不覆盖。
