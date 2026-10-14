@@ -67,6 +67,8 @@ export class Store {
         run_id TEXT PRIMARY KEY REFERENCES runs(id), mode TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS agent_profiles (
         user_id TEXT PRIMARY KEY REFERENCES users(id), content TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS user_deletions (
+        user_id TEXT PRIMARY KEY REFERENCES users(id), state TEXT NOT NULL, created_at INTEGER NOT NULL);
     `);
   }
   close() { this.db.close(); }
@@ -77,14 +79,53 @@ export class Store {
     this.db.prepare('INSERT INTO users VALUES (?,?,?,?,?)').run(id, username, password, role, Date.now());
     return { id, username, role };
   }
-  users() { return this.db.prepare('SELECT id,username,role,created_at FROM users ORDER BY created_at').all(); }
+  users() { return this.db.prepare(`SELECT u.id,u.username,u.role,u.created_at,d.state AS deletion_status
+    FROM users u LEFT JOIN user_deletions d ON d.user_id=u.id ORDER BY u.created_at`).all(); }
+  deletion(userId) { return this.db.prepare('SELECT state,created_at FROM user_deletions WHERE user_id=?').get(userId); }
+  usable(userId) { return !!this.userById(userId) && !this.deletion(userId); }
+  requireUsable(userId) { if (!this.usable(userId)) throw new Error('user_unavailable'); }
+  beginDeletion(userId) {
+    const user = this.userById(userId);
+    if (!user || user.role !== 'user') throw new Error('cannot_delete_admin');
+    if (this.db.prepare("SELECT 1 FROM runs WHERE user_id=? AND status='running'").get(userId)) throw new Error('user_has_active_run');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.prepare(`INSERT INTO user_deletions VALUES (?,'pending',?)
+        ON CONFLICT(user_id) DO UPDATE SET state='pending'`).run(userId, Date.now());
+      this.revokeUserTokens(userId);
+      this.db.prepare('UPDATE invitations SET revoked=1 WHERE target_user=?').run(userId);
+      this.db.prepare("UPDATE runs SET status='cancelled',error='user_deleted' WHERE user_id=? AND status='queued'").run(userId);
+      this.db.prepare("UPDATE wechat_inbox SET delivery='cancelled' WHERE user_id=? AND delivery='pending'").run(userId);
+      this.db.prepare('DELETE FROM reminders WHERE user_id=?').run(userId);
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  deletionFailed(userId) { this.db.prepare("UPDATE user_deletions SET state='failed' WHERE user_id=?").run(userId); }
+  finishDeletion(userId) {
+    if (!this.deletion(userId) || this.userById(userId)?.role !== 'user') throw new Error('user_unavailable');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const table of ['traces','run_modes','wechat_voice']) this.db.prepare(`DELETE FROM ${table} WHERE run_id IN (SELECT id FROM runs WHERE user_id=?)`).run(userId);
+      for (const table of ['wechat_inbox','wechat_bindings','wechat_identities','wechat_logins','reminders','auth_sessions','integrations','memories','agent_profiles']) {
+        this.db.prepare(`DELETE FROM ${table} WHERE user_id=?`).run(userId);
+      }
+      this.db.prepare('DELETE FROM invitations WHERE target_user=?').run(userId);
+      this.db.prepare('DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE user_id=?)').run(userId);
+      this.db.prepare('DELETE FROM runs WHERE user_id=?').run(userId);
+      this.db.prepare('DELETE FROM conversations WHERE user_id=?').run(userId);
+      this.db.prepare('DELETE FROM user_deletions WHERE user_id=?').run(userId);
+      this.db.prepare('DELETE FROM users WHERE id=?').run(userId);
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
   createToken(hash, userId) {
     this.db.prepare('DELETE FROM auth_sessions WHERE expires_at <= ?').run(Date.now());
     this.db.prepare('INSERT INTO auth_sessions VALUES (?,?,?)').run(hash, userId, Date.now() + 86400000);
   }
   principal(hash) {
     return this.db.prepare(`SELECT u.id,u.username,u.role FROM auth_sessions s
-      JOIN users u ON u.id=s.user_id WHERE s.hash=? AND s.expires_at>?`).get(hash, Date.now());
+      JOIN users u ON u.id=s.user_id WHERE s.hash=? AND s.expires_at>?
+      AND NOT EXISTS (SELECT 1 FROM user_deletions d WHERE d.user_id=u.id)`).get(hash, Date.now());
   }
   deleteToken(hash) { this.db.prepare('DELETE FROM auth_sessions WHERE hash=?').run(hash); }
   revokeUserTokens(userId) { this.db.prepare('DELETE FROM auth_sessions WHERE user_id=?').run(userId); }
@@ -94,6 +135,7 @@ export class Store {
     this.db.prepare('UPDATE invitations SET revoked=1 WHERE target_user=? AND used_at IS NULL').run(userId);
   }
   newInvite(hash, targetUser = null) {
+    if (targetUser) this.requireUsable(targetUser);
     if (targetUser) this.db.prepare('UPDATE invitations SET revoked=1 WHERE target_user=? AND used_at IS NULL').run(targetUser);
     const id = randomUUID(), expiresAt = Date.now() + 7 * 86400000;
     this.db.prepare('INSERT INTO invitations VALUES (?,?,?,?,NULL,0)').run(id, hash, targetUser, expiresAt);
@@ -115,7 +157,7 @@ export class Store {
       let user;
       if (invite.target_user) {
         user = this.userById(invite.target_user);
-        if (!user || user.role !== 'user' || user.username !== username) throw new Error('invite_username_mismatch');
+        if (!user || !this.usable(user.id) || user.role !== 'user' || user.username !== username) throw new Error('invite_username_mismatch');
         this.setPassword(user.id, password);
       } else {
         if (this.user(username)) throw new Error('username_exists');
@@ -128,7 +170,7 @@ export class Store {
   }
   agentProfile(userId) { return this.db.prepare('SELECT content FROM agent_profiles WHERE user_id=?').get(userId)?.content || ''; }
   setAgentProfile(userId, content) {
-    if (!this.userById(userId)) throw new Error('Unknown user');
+    this.requireUsable(userId);
     if (typeof content !== 'string' || content.length > 8000) throw new Error('Invalid persona');
     const workspace = join(this.directory, 'tenants', userId, 'workspace');
     mkdirSync(workspace, { recursive: true, mode: 0o700 });
@@ -138,9 +180,11 @@ export class Store {
   }
   memory(userId) { return this.db.prepare('SELECT content FROM memories WHERE user_id=?').get(userId)?.content || ''; }
   writeMemory(userId, content) {
+    this.requireUsable(userId);
     this.db.prepare('INSERT INTO memories VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET content=excluded.content').run(userId, content);
   }
   createConversation(userId, title) {
+    this.requireUsable(userId);
     const id = randomUUID();
     this.db.prepare('INSERT INTO conversations VALUES (?,?,?,NULL,?)').run(id, userId, title, Date.now());
     return this.conversation(userId, id);
@@ -161,6 +205,7 @@ export class Store {
     this.db.prepare('INSERT INTO messages VALUES (NULL,?,?,?,?)').run(id, role, content, Date.now());
   }
   createRun(userId, conversationId, prompt, mode) {
+    this.requireUsable(userId);
     if (!this.conversation(userId, conversationId)) throw new Error('Conversation not found');
     const id = randomUUID();
     this.db.prepare('INSERT INTO runs VALUES (?,?,?,?,?,NULL,NULL,?)').run(id, userId, conversationId, prompt, 'queued', Date.now());
@@ -190,6 +235,7 @@ export class Store {
   }
   loginAttempt(userId, id) { return this.db.prepare('SELECT * FROM wechat_logins WHERE user_id=? AND id=?').get(userId, id); }
   newLogin(userId, expiresAt) {
+    this.requireUsable(userId);
     this.db.prepare("UPDATE wechat_logins SET status='cancelled',qr_token=NULL,qr_image=NULL WHERE user_id=? AND status IN ('creating','wait','scaned','scaned_but_redirect')").run(userId);
     const id = randomUUID();
     this.db.prepare('INSERT INTO wechat_logins VALUES (?,?,?,NULL,NULL,NULL,?)').run(id, userId, 'creating', expiresAt);
@@ -202,6 +248,7 @@ export class Store {
   wechatBinding(userId) { return this.db.prepare('SELECT * FROM wechat_bindings WHERE user_id=?').get(userId); }
   wechatBindings() { return this.db.prepare('SELECT * FROM wechat_bindings').all(); }
   bindWechat(userId, credentials) {
+    this.requireUsable(userId);
     // Identity must not be silently transferred to another local user.
     const conflict = this.db.prepare('SELECT user_id FROM wechat_bindings WHERE bot_id=? OR remote_user=?').get(credentials.botId, credentials.remoteUser);
     if (conflict && conflict.user_id !== userId) throw new Error('wechat_identity_already_bound');

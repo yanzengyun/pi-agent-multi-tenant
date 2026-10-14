@@ -5,6 +5,7 @@ export class Reminders {
   constructor(store, onDue = () => {}) { this.store = store; this.onDue = onDue; }
   list(userId) { return this.store.db.prepare('SELECT id,text,next_at,repeat_daily,status FROM reminders WHERE user_id=? ORDER BY next_at').all(userId); }
   create(userId, { text, at, daily = false }, now = Date.now()) {
+    this.store.requireUsable(userId);
     if (typeof text !== 'string' || !text.trim() || text.length > 2000 || typeof at !== 'string' ||
         !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(at) || typeof daily !== 'boolean') throw new Error('invalid_reminder');
     const when = Date.parse(at);

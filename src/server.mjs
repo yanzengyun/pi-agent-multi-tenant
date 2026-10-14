@@ -6,6 +6,7 @@ import { hashPassword, checkPassword, issueToken, tokenHash, requestToken } from
 import { RunQueue } from './queue.mjs';
 import { WechatManager } from './wechat.mjs';
 import { Reminders } from './reminders.mjs';
+import { UserDeletion } from './user-deletion.mjs';
 
 class HttpError extends Error {
   constructor(status, code) { super(code); this.status = status; }
@@ -46,13 +47,14 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
   reminders.start();
   if (silverbullet && wechat) {
     for (const binding of store.wechatBindings()) {
-      if (binding.status === 'connected') void silverbullet.provision(store.userById(binding.user_id)).catch(() => {});
+      if (binding.status === 'connected' && store.usable(binding.user_id)) void silverbullet.provision(store.userById(binding.user_id)).catch(() => {});
     }
   }
   const index = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8').replace('<!--APP_BASE-->', `<base href="${basePath}/">`);
   let activeLogins = 0;
   const failures = new Map();
   const credentialChanges = new Set();
+  const userDeletion = new UserDeletion(store, { wechat, silverbullet, sandbox, credentialChanges });
   const server = createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -106,7 +108,7 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
         activeLogins++;
         const user = store.user(username); let valid;
         try { valid = await checkPassword(password, user?.password || dummyPassword); } finally { activeLogins--; }
-        if (!user || !valid) {
+        if (!user || !valid || !store.usable(user.id)) {
           const entry = failures.get(address) || { count: 0, until: Date.now() + 60000 }; entry.count++; failures.set(address, entry);
           throw new HttpError(401, 'invalid_credentials');
         }
@@ -174,11 +176,23 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
       }
       if (path.startsWith('/api/admin/')) {
         if (principal.role !== 'admin' && !selfService) throw new HttpError(403, 'admin_required');
+        const deleteUser = path.match(/^\/api\/admin\/users\/([^/]+)$/);
+        if (deleteUser && req.method === 'DELETE') {
+          const input = await body(req);
+          try { return reply(200, await userDeletion.remove(deleteUser[1], input.confirmUsername)); }
+          catch (error) {
+            const codes = { user_not_found: 404, cannot_delete_admin: 403, delete_confirmation_mismatch: 400,
+              user_has_active_run: 409, user_busy: 409, user_cleanup_failed: 503 };
+            throw new HttpError(codes[error.message] || 500, codes[error.message] ? error.message : 'internal_error');
+          }
+        }
+        const targetUser = path.match(/^\/api\/admin\/users\/([^/]+)\//);
+        if (targetUser && store.deletion(targetUser[1])) throw new HttpError(409, 'user_deletion_pending');
         if (path === '/api/admin/invites') {
           if (req.method === 'GET') return reply(200, { invitations: store.invites() });
           if (req.method === 'POST') {
             const input = await body(req), target = input.userId ? store.userById(input.userId) : null;
-            if (input.userId && (!target || target.role !== 'user')) throw new HttpError(400, 'invalid_invite_target');
+            if (input.userId && (!target || !store.usable(target.id) || target.role !== 'user')) throw new HttpError(400, 'invalid_invite_target');
             const token = randomBytes(32).toString('base64url'), result = store.newInvite(tokenHash(token), target?.id || null);
             return reply(201, { ...result, token, url: (origin || `http://${req.headers.host}`) + basePath + '/join#invite=' + token });
           }

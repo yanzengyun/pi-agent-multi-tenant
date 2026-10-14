@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 // Only the backend assigns userId. Neither socket paths nor identities are model inputs.
 export class Sandbox {
   constructor(socketPath) { this.socketPath = socketPath; }
+  release(userId) { return this.call('/release', { userId }); }
   call(path, body, signal) {
     return new Promise((resolve, reject) => {
       const req = request({ socketPath: this.socketPath, path, method: 'POST', signal,

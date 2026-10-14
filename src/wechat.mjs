@@ -134,6 +134,13 @@ export class WechatManager {
     if (binding) this.controllers.get(binding.id)?.abort();
     this.store.removeWechat(userId);
   }
+  async forget(userId) {
+    const binding = this.store.wechatBinding(userId), loop = binding && this.loops.get(binding.id);
+    const checks = this.store.db.prepare('SELECT id FROM wechat_logins WHERE user_id=?').all(userId)
+      .map(row => this.checks.get(row.id)).filter(Boolean);
+    this.disconnect(userId);
+    await Promise.allSettled([loop, ...checks, this.flushWork]);
+  }
   cancelLogin(userId, id) {
     const attempt = this.store.loginAttempt(userId, id);
     if (!attempt) throw new Error('login_not_found');
@@ -146,7 +153,7 @@ export class WechatManager {
     const work = this.poll(binding, controller.signal).finally(() => { this.controllers.delete(binding.id); this.loops.delete(binding.id); });
     this.loops.set(binding.id, work);
   }
-  current(binding) { return this.store.wechatBinding(binding.user_id)?.id === binding.id; }
+  current(binding) { return this.store.usable(binding.user_id) && this.store.wechatBinding(binding.user_id)?.id === binding.id; }
   ingest(binding, raw) {
     if (!this.current(binding) || raw.message_type !== 1 || raw.from_user_id !== binding.remote_user ||
         (raw.to_user_id && raw.to_user_id !== binding.bot_id) || typeof raw.context_token !== 'string' ||

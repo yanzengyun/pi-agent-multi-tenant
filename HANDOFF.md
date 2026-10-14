@@ -9,6 +9,14 @@
 - 用户已要求开始开发，并指定GitHub仓库 https://github.com/yanzengyun/pi-agent-multi-tenant.git 上传代码。
 - 当前个人助手必须保持可用。没有授权把真实用户状态迁入开发环境；测试仅用虚构用户。
 
+## 管理台删除用户（2026-10-14，本地完成待上线）
+
+- 用户要求已有注册用户可删除并处理旧资源。已增加普通用户删除/重试清理按钮、输入用户名确认的dialog、DELETE /api/admin/users/:id；不能删除管理员/普通用户不能调用，正在运行任务或更新笔记凭据时拒绝。
+- 新user_deletions表保存停用/清理状态，先撤销登录与目标邀请、取消排队任务/提醒，再停止微信并等待晚到扫码/投递，归档SB、release沙箱、删除用户目录和所属SQL行。失败保持停用供管理员重试；服务重启不恢复账号。新账号重新注册同名获得新UUID，不继承旧记忆。没有自动删除任何真实用户。
+- SB归档方式为PATCH access:none、members:{}、shell关闭并回读，再删除UUID fullName归属的human/agent账户并回读确认；不DELETE Space、不删旧笔记文件，避免误判外部API删文件语义。archive索引写data/deleted-users/<uuid>.json（无密钥/正文）。历史备份保留。原个人Pi/SB不参与。
+- 本地8项删除测试通过；加Pi工具/提醒/微信/MP3回归合计36项Node通过（使用--test-isolation=none确认实际测试计数），5项Python池测试通过，JS语法/diff检查通过。权限测试直接调真实HTTP handler，不开socket；SB归档测试通过注入admin响应验证，尚非真实SB验收。scripts/verify-invites-ui.mjs补齐真实删除确认和旧登录/笔记拒绝断言，只用于synthetic用户。
+- 当前SSH仍socket Operation not permitted，功能/前几轮的CSS与笔记文案均未同步本轮新改动。网络恢复后先运行完整npm test，空闲时scripts/update-live.py部署（仅重启多用户后端，已有sandbox /release无需更新runner），再跑verify-invites-ui；测试删除成功会留下预期的私有测试笔记归档。确认旧笔记访问确实403/401和真实sandbox release通过后才标已上线。推送GitHub与同步服务器Git克隆仍待执行。
+
 ## 笔记密码文案简化（2026-10-14，待同步上线）
 
 - 用户要求简化「我的笔记」密码设置。保持后端当前密码校验，不把会话当作修改凭据的唯一验证，也不缓存明文密码。已共用密码的账号只显示“默认使用主页密码，无需单独设置”，折叠项称“修改笔记用户名”；旧账号称“同步旧账号的笔记登录”。输入框明确“当前主页密码（用于验证）/不是设置新密码”，真正改密码指向账号安全。保存成功收起表单。

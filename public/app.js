@@ -6,7 +6,11 @@ async function api(path, method = 'GET', value) {
   const result = await response.json();
   if (!response.ok) {
     if (result.error === 'authentication_required') { $('#console').hidden = true; $('#login').hidden = false; }
-    const messages = { invalid_credentials: '账号或密码不正确。', username_exists: '账号已存在。', login_throttled: '请求较多，请稍后再试。' };
+    const messages = { invalid_credentials: '账号或密码不正确。', username_exists: '账号已存在。', login_throttled: '请求较多，请稍后再试。',
+      user_has_active_run: '该用户正在执行任务，请结束后再删除。', user_busy: '该用户正在更新设置或清理，请稍后重试。',
+      delete_confirmation_mismatch: '输入的用户名不一致，请检查。', cannot_delete_admin: '不能删除管理员账号。',
+      user_cleanup_failed: '账号已停用，但资源清理未完成。请稍后点击“重试清理”，旧数据不会转给新用户。',
+      user_deletion_pending: '该账号已停用，正在等待资源清理。' };
     const error = new Error(messages[result.error] || result.error || '请求失败'); error.code = result.error; throw error;
   }
   return result;
@@ -90,7 +94,7 @@ async function showConsole() {
   const data = await api('/api/admin/users');
   const select = $('#invite-target'), prior = select.value; select.replaceChildren();
   const fresh = document.createElement('option'); fresh.value = ''; fresh.textContent = '新用户注册'; select.append(fresh);
-  for (const user of data.users.filter(user => user.role === 'user')) {
+  for (const user of data.users.filter(user => user.role === 'user' && !user.deletion_status)) {
     const option = document.createElement('option'); option.value = user.id; option.textContent = `激活已有账号：${user.username}`; select.append(option);
   }
   select.value = prior; await refreshInvites();
@@ -104,10 +108,12 @@ async function showConsole() {
     row.dataset.username = user.username.toLowerCase();
     const name = document.createElement('strong'); name.textContent = user.username;
     const detail = document.createElement('span'); detail.textContent = user.role === 'admin' ? '管理员' :
-      `微信：${states[user.wechat.status] || user.wechat.status} · 笔记：${states[user.silverbullet.status] || user.silverbullet.status}`;
+      user.deletion_status ? '已停用 · 等待资源清理，可重试' : `微信：${states[user.wechat.status] || user.wechat.status} · 笔记：${states[user.silverbullet.status] || user.silverbullet.status}`;
     const info = document.createElement('div'); info.append(name, detail); row.append(info);
     if (user.role !== 'admin') {
       const controls = document.createElement('div'); controls.className = 'actions';
+      const remove = action(user.deletion_status ? '重试清理' : '删除用户', () => showDeletion(user)); remove.className = 'danger';
+      if (user.deletion_status) { controls.append(remove); row.append(controls); $('#users').append(row); continue; }
       controls.append(action('账号激活 / 重置密码', async () => { $('#invite-target').value = user.id; $('#invite-form').requestSubmit(); $('#invite-form').scrollIntoView({ behavior: 'smooth', block: 'center' }); }));
       controls.append(action('运行记录', () => showTrace(user)));
       controls.append(action('定时提醒', () => showReminders(user)));
@@ -122,12 +128,35 @@ async function showConsole() {
           $('#sb-password').type = 'password'; $('#sb-dialog').showModal();
         })
         : action('准备笔记空间', async () => { await api(`/api/admin/users/${user.id}/silverbullet`, 'POST', {}); await showConsole(); }));
-      row.append(controls);
+      controls.append(remove); row.append(controls);
     }
     $('#users').append(row);
   }
   filterUsers();
 }
+let deletionUser = null, deleting = false;
+function showDeletion(user) {
+  deletionUser = user; $('#delete-title').textContent = `${user.deletion_status ? '重试清理' : '删除用户'} · ${user.username}`;
+  $('#delete-form').reset(); $('#delete-form input').placeholder = user.username; $('#delete-status').textContent = '';
+  $('#delete-dialog').showModal();
+}
+$('#delete-close').addEventListener('click', () => { if (!deleting) { $('#delete-dialog').close(); deletionUser = null; } });
+$('#delete-dialog').addEventListener('cancel', event => { if (deleting) event.preventDefault(); else deletionUser = null; });
+$('#delete-form').addEventListener('submit', async event => {
+  event.preventDefault(); if (!deletionUser || deleting) return;
+  const user = deletionUser, confirmUsername = new FormData(event.target).get('confirmUsername');
+  if (confirmUsername !== user.username) { $('#delete-status').textContent = '输入的用户名不一致，请检查。'; return; }
+  deleting = true; const button = event.target.querySelector('button'); button.disabled = true; $('#delete-close').disabled = true;
+  $('#delete-status').textContent = '正在停用账号并清理资源，请稍候…';
+  try {
+    const result = await api('/api/admin/users/' + user.id, 'DELETE', { confirmUsername });
+    $('#delete-dialog').close(); deletionUser = null;
+    notice(result.notesArchived ? '用户已删除，旧笔记已归档且原账号不可访问。' : '用户已删除，历史备份保留。'); await showConsole();
+  } catch (error) {
+    $('#delete-status').textContent = error.message;
+    await showConsole().catch(() => {});
+  } finally { deleting = false; button.disabled = false; $('#delete-close').disabled = false; }
+});
 function filterUsers() {
   const query = $('#user-search').value.trim().toLowerCase(); let visible = 0;
   for (const row of $('#users').children) { row.hidden = !row.dataset.username.includes(query); if (!row.hidden) visible++; }

@@ -1,0 +1,12 @@
+{
+  "verifiedAt": "2026-10-14",
+  "scope": "offline local tests, fake user data only",
+  "deletionTestsPassed": 8,
+  "nodeRegressionTestsPassed": 36,
+  "sandboxPoolTestsPassed": 5,
+  "realUsersDeleted": false,
+  "productionDeployed": false,
+  "realSilverBulletAndSandboxDeleteVerified": false,
+  "browserDeletionVerified": false,
+  "blocker": "SSH socket Operation not permitted; network restricted"
+}

@@ -72,6 +72,7 @@ export class SilverBullet {
       url: (this.config.publicUrl || this.base).replace(/\/$/, '') + item.state.prefix + '/', username: item.state.humanUsername } : {}) };
   }
   async provision(user) {
+    this.store.requireUsable(user.id);
     if (this.provisions.has(user.id)) return this.provisions.get(user.id);
     const work = this.createSpace(user).finally(() => this.provisions.delete(user.id)); this.provisions.set(user.id, work); return work;
   }
@@ -133,6 +134,7 @@ export class SilverBullet {
     return this.view(user.id);
   }
   async setHumanLogin(user, { username, password }) {
+    this.store.requireUsable(user.id);
     if (typeof username !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(username) || typeof password !== 'string' || password.length < 12 || password.length > 256) throw new Error('invalid_sb_credentials');
     if (this.loginChanges.has(user.id)) throw new Error('sb_busy');
     const work = this.changeHumanLogin(user, username, password).finally(() => this.loginChanges.delete(user.id));
@@ -164,7 +166,43 @@ export class SilverBullet {
     }
     return this.view(user.id);
   }
+  busy(userId) { return this.provisions.has(userId) || this.loginChanges.has(userId); }
+  async archiveUser(user) {
+    const item = this.store.integration(user.id, 'silverbullet');
+    if (!item) return null;
+    if (this.busy(user.id)) throw new Error('sb_busy');
+    const state = item.state, folder = 'spaces/pi-tenants/' + user.id, prefix = '/users/' + user.id;
+    if (state.folder !== folder || state.prefix !== prefix) throw new Error('sb_space_ownership_mismatch');
+    const accounts = await this.admin('users'), spaces = await this.admin('spaces');
+    const markers = [`Pi tenant ${user.id} human`, `Pi tenant ${user.id} agent`];
+    const ownedAccounts = Object.keys(accounts).filter(name => markers.includes(accounts[name].fullName));
+    for (const name of [state.humanUsername, state.agentUsername, ...ownedAccounts]) {
+      if (accounts[name] && (accounts[name].admin || !markers.includes(accounts[name].fullName) || name === this.config.username)) throw new Error('sb_account_ownership_conflict');
+    }
+    const ownedSpaces = Object.entries(spaces).filter(([id, space]) => id === state.spaceId || space.folder === folder);
+    const allowedMembers = new Set([state.humanUsername, state.agentUsername, ...ownedAccounts]);
+    for (const [, space] of ownedSpaces) {
+      if (space.folder !== folder || space.binding?.prefix !== prefix || space.access !== 'none' ||
+          Object.keys(space.members || {}).some(name => !allowedMembers.has(name))) throw new Error('sb_space_ownership_mismatch');
+    }
+    for (const [id, space] of Object.entries(spaces)) {
+      if (!ownedSpaces.some(([ownedId]) => ownedId === id) && Object.keys(space.members || {}).some(name => ownedAccounts.includes(name))) throw new Error('sb_account_in_other_space');
+    }
+    for (const [id] of ownedSpaces) {
+      const path = 'spaces/' + encodeURIComponent(id);
+      await this.admin(path, 'PATCH', { name: `已删除用户 ${user.username} (${user.id})`, members: {}, access: 'none', shell: { enabled: false, whitelist: [] } });
+      const archived = await this.admin(path);
+      if (archived.folder !== folder || archived.binding?.prefix !== prefix || archived.access !== 'none' ||
+          Object.keys(archived.members || {}).length || archived.shell?.enabled !== false) throw new Error('sb_archive_permissions_mismatch');
+    }
+    for (const name of ownedAccounts) await this.admin('users/' + encodeURIComponent(name), 'DELETE');
+    const remaining = await this.admin('users');
+    if (Object.values(remaining).some(account => markers.includes(account.fullName))) throw new Error('sb_account_cleanup_incomplete');
+    // Archive the space with no members instead of guessing whether DELETE also erases its files.
+    return { folder, spaceIds: ownedSpaces.map(([id]) => id) };
+  }
   async file(userId, page, { method = 'GET', content, etag, signal } = {}) {
+    this.store.requireUsable(userId);
     const item = this.store.integration(userId, 'silverbullet');
     if (item?.status !== 'ready') throw new Error('sb_not_ready');
     const url = this.base + item.state.prefix + '/.fs/' + notePath(page);

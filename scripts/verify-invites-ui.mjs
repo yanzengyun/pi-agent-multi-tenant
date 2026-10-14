@@ -108,10 +108,25 @@ try {
   await member.locator('[data-panel=connections]').click();
   assert.deepEqual(challenges, []); assert.deepEqual(adminErrors, []);
   assert.equal(errors.length, 0); await member.screenshot({ path: '/tmp/pi-account-ready.png', fullPage: true });
+  const row = page.locator('#users article').filter({ has: page.getByText(username, { exact: true }) });
+  await row.getByRole('button', { name: '删除用户', exact: true }).click();
+  await page.locator('#delete-form input').fill('wrong-fixture-name');
+  await page.locator('#delete-form button.danger').click();
+  await page.locator('#delete-status').getByText('输入的用户名不一致，请检查。', { exact: true }).waitFor();
+  await page.locator('#delete-form input').fill(username);
+  const deletionResponse = page.waitForResponse(r => r.url().endsWith('/api/admin/users/' + user.id) && r.request().method() === 'DELETE');
+  await page.locator('#delete-form button.danger').click();
+  const deleted = await deletionResponse; assert.equal(deleted.status(), 200); assert.equal((await deleted.json()).notesArchived, true);
+  user = null;
+  await page.locator('#delete-dialog').waitFor({ state: 'hidden' }); await row.waitFor({ state: 'hidden' });
+  assert.equal((await account.request.get(login.url + 'api/account')).status(), 401);
+  assert.ok([401,403,404].includes((await account.request.get(notesUrl + '.fs/index.md')).status()));
+  assert.equal((await account.request.post(login.url + 'api/login', { data: { username, password: 'fake-changed-password-38' } })).status(), 401);
   console.log(JSON.stringify({ invitation_registration: true, single_use: true, own_preferences: true,
     chosen_notes_login: true, password_not_retained: true, own_qr: true, account_password_rotation: true, unified_note_password_rotation: true, native_login_without_basic_challenge: true, ai_draft_read_only: true,
     admin_and_personal_trace_denied: true, assistant_without_basic_challenge: true, invite_single_form: true,
-    password_confirmation: true, registration_auto_login: true, role_navigation: true, mobile_layout: true, javascript_errors: 0 }));
+    password_confirmation: true, registration_auto_login: true, role_navigation: true, mobile_layout: true,
+    delete_confirmation: true, deletion_old_login_denied: true, deletion_old_notes_denied: true, javascript_errors: 0 }));
 } finally {
   if (user) writeFileSync('/tmp/pi-admin-check-user.json', JSON.stringify(user), { mode: 0o600 });
   await browser.close();

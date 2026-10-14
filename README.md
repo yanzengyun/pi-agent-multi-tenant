@@ -153,6 +153,22 @@ Cookie供管理台使用，Bearer供集成/测试使用。用户权限不接受�
 
 管理台可经SSH隧道访问。上线前应配置 HTTPS、`ASSISTANT_SECURE_COOKIES=on` 和固定 `ASSISTANT_ORIGIN`；此开发入口不直接开放公网。
 
+## 管理员删除用户（本地已开发，待上线验收）
+
+管理台每个普通用户提供「删除用户」，输入该用户名二次确认。管理员账号不能删除。正在执行模型任务或更新笔记凭据时返回忙碌，等待结束后再操作。
+
+删除分两步：先在SQLite持久化停用标记，撤销登录会话与激活邀请、取消排队任务和提醒；再停止微信轮询/投递，等待未结束的扫码检查，处理外部资源。旧手机微信中已经发送的消息不会远程撤回。
+
+- 应用：清理该用户的聊天、运行trace、记忆、人物设定、SDK会话、缓存MP3、绑定及所属目录；清理微信身份归属后可以重新邀请注册，同名账号会获得新UUID，不会继承旧记忆。
+- 沙箱：调用现有runner的`/release`清空该用户工作文件并释放槽位，不重启runner，也不影响其他用户文件。
+- 笔记：保留旧文件为服务器私有归档。将所属Space设为`access:none`、清空members、关闭shell并标记已删除用户，随后删除具有该UUID归属标记的人类/Agent账号，再回读确认。它不尝试永久删除旧笔记，也不按名称猜测删除其他人的账号。
+- 归档索引：`/home/admin/.local/share/pi-agent-multi-tenant/data/deleted-users/<uuid>.json`记录原用户名、UUID、笔记文件夹和Space ID，不存聊天正文、密码或token。原笔记目录仍为`/opt/pi-agent-multi-tenant-sb/data/spaces/pi-tenants/<uuid>`。管理员需要恢复或永久清理时，以该索引核对归属；不自动分配给新用户。
+- 历史备份：按现有备份策略保留，不宣称删除操作擦除了备份或SQLite底层历史字节。
+
+外部清理失败不会返回删除成功；账号保持停用，在用户列表显示「重试清理」。服务重启后停用状态保留，管理员可继续重试；没有自动重新启用或自动后台重试。笔记权限的处理是否完成以实际清理结果为准，失败时不能假定所有外部权限已经撤销。
+
+本地已通过8项删除相关测试、合计36项无需网络的Node回归，以及5项Python沙箱池测试。当前会话禁止SSH/socket，尚未上线，未进行真实SilverBullet/沙箱接口和浏览器删除验收；现有54项旧测试中需要监听HTTP/socket的部分本轮未重跑。公网验收脚本已增加只对新建`verify_ui_`测试账号执行删除，验证旧主页/笔记登录不可访问；删除产生的测试笔记归档是预期保留物，不影响真实账号。
+
 ## 当前上线部署
 
 `scripts/deploy-live.py` 部署到 `/home/admin/pi-agent-multi-tenant-live`，状态为 `/home/admin/.local/share/pi-agent-multi-tenant/data`，私有配置为 `/home/admin/.config/pi-agent-multi-tenant`。它与旧开发实例、个人Pi的状态分开。`pi-multi-tenant.service` 已启用开机启动，异常退出自动重启；MemoryHigh=256MiB、MemoryMax=384MiB、CPUQuota=50%，超限可能终止本后台，不会借此扩大个人助手权限。
