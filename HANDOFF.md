@@ -2,6 +2,13 @@
 
 更新时间：2026-10-14。
 
+## 多用户默认朋友设定与笔记入口（2026-10-14，已上线）
+
+- 用户选择自然朋友型，要求默认会聊天、适时建议总结，以帮朋友记笔记为特色，并能提供自己的笔记/个人页面入口及功能介绍。新增src/persona.mjs默认设定；无自定义/留空时动态使用，页面、persona_read与模型注入一致，现有自定义设定不覆盖。
+- 公共提示明确请求才写笔记、先读已有页并带etag更新、成功后才确认，凭据不写笔记。新增只读account_info，后台闭包固定userId，来自SB.view与配置Origin的个人页面，返回本轮实际工具列表；不输出密码/token，不开放选用户参数，未配置入口为null/disabled。草稿仍仅persona_read。
+- 本地66项Node测试通过，覆盖默认显示/恢复/自定义保留、跨账号入口拒绝、未配置入口不编造、实际能力清单不包含未启用工具。已经部署，备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261014-145106；原agent_profiles、用户/绑定摘要及个人PID2985保持。首次混合时间/设定/Python多操作模型验收返回failed；改为--assistant-info分轮验证账号入口、创建与更新，真实模型全部通过，不扩大任务超时或权限。
+- scripts/verify-user-sandbox.mjs --assistant-info验证默认朋友设定注入、account_info真实调用、答复包含自己的笔记/个人网址和用户名、note_write实际写入、note_read先于带etag更新且原内容保留；synthetic账号/Space均清理。公网verify-invites-ui通过默认设定显示、自定义保存、AI草稿只读、注册/角色导航/移动布局/改密/删除；笔记验收新增等待.cm-editor，登录及改密后编辑器实际加载成功，JS错误0。未向真实微信发送测试消息。本地/服务器源码与文档收尾同步。
+
 ## 移除专用查时间工具（2026-10-14，已上线）
 
 - 用户要求已有cmd即可查时间，移除多用户SDK的time_now；系统提示改为用cmd执行TZ=Asia/Shanghai date，未配置沙箱时只参考本轮提示时间。更新原工具测试及真实模型验收脚本，不改变沙箱权限、其他12个工具或个人主账号插件。

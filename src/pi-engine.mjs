@@ -97,6 +97,12 @@ export class PiEngine {
         return result(JSON.stringify(data));
       },
     });
+    if (ctx.accountInfo) customTools.push({
+      name: 'account_info', label: 'My Assistant Info',
+      description: '查询当前用户自己的笔记网址、笔记登录用户名、密码是否与主页共用、个人页面网址和本轮实际可用工具。用户问如何访问笔记、个人页面或你能做什么时使用。只读，不返回密码、token或其他用户信息。',
+      parameters: Type.Object({}),
+      async execute() { return result(JSON.stringify({ ...ctx.accountInfo(), availableTools: customTools.map(tool => tool.name) })); },
+    });
     if (ctx.personaDraft) customTools.splice(0, customTools.length, ...customTools.filter(tool => tool.name === 'persona_read'));
     const { session } = await createAgentSession({ cwd: workspace, agentDir, model, modelRuntime: runtime,
       thinkingLevel: this.config.thinkingLevel, resourceLoader, sessionManager: manager,

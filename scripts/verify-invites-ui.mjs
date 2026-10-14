@@ -40,6 +40,7 @@ try {
   const preferences = 'FAKE_PROFILE_NAME_ONLY：称呼我为测试用户，回答简短。';
   await member.locator('[data-panel=persona]').click();
   assert.equal(await member.locator('#panel-connections').isVisible(), false);
+  assert.match(await member.locator('#agents-content').inputValue(), /自然朋友/);
   await member.locator('#agents-content').fill(preferences); await member.locator('#agents-form button').click();
   await member.getByText('人物设定已保存，后续对话生效。', { exact: true }).waitFor();
   assert.equal((await (await account.request.get(login.url + 'api/account/agents')).json()).content, preferences);
@@ -71,6 +72,7 @@ try {
   await notes.locator('input[name=username]').fill(notesUsername); await notes.locator('input[type=password]').fill(notesPassword);
   await notes.getByRole('button', { name: 'Log in', exact: true }).click();
   await notes.waitForURL(url => url.pathname.startsWith('/users/' + user.id + '/') && !url.pathname.includes('/.auth'));
+  await notes.locator('.cm-editor').waitFor({ state: 'visible', timeout: 30000 });
   assert.equal((await account.request.get(notesUrl + '.fs/index.md')).status(), 200);
   assert.deepEqual(noteChallenges, []); await notes.close();
   await member.locator('#wechat-bind').click(); await member.locator('#qr-image[src^="data:image/png;base64,"]').waitFor({ state: 'visible' });
@@ -90,6 +92,7 @@ try {
   await afterRotation.locator('input[type=password]').fill('fake-changed-password-38');
   await afterRotation.getByRole('button',{name:'Log in',exact:true}).click();
   await afterRotation.waitForURL(url=>url.pathname.startsWith('/users/'+user.id+'/') && !url.pathname.includes('/.auth'));
+  await afterRotation.locator('.cm-editor').waitFor({ state: 'visible', timeout: 30000 });
   assert.equal((await freshNotes.request.get(notesUrl+'.fs/index.md')).status(),200); await freshNotes.close();
   const reuse = await (await browser.newContext()).newPage(); await reuse.goto(invitation.url);
   await reuse.getByText('邀请已失效、被使用或撤销，请联系管理员获取新链接。', { exact: true }).waitFor();

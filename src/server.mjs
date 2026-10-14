@@ -42,7 +42,10 @@ export async function makeServer({ store, engine, adminPassword, secureCookies =
   const reminders = new Reminders(store, () => { void wechat?.flush(); });
   const wechat = wechatClient && new WechatManager(store, wechatClient, { ...wechatOptions, onMessage: () => queue.kick() });
   const queue = new RunQueue(store, engine, { timeoutMs, beforeRun: (run, signal) => wechat?.processing(run, signal),
-    contextFactory: (userId, run) => ({ speech: speech?.tools(store, userId, run), notes: silverbullet?.tools(userId), reminders: reminders.tools(userId), sandbox: sandbox?.tools(userId) }) });
+    contextFactory: (userId, run) => ({ speech: speech?.tools(store, userId, run), notes: silverbullet?.tools(userId), reminders: reminders.tools(userId), sandbox: sandbox?.tools(userId),
+      accountInfo: () => ({ username: store.userById(userId).username,
+        personalPageUrl: origin && store.userById(userId).role === 'user' ? new URL(basePath + '/account', origin).href : null,
+        notes: silverbullet?.view(userId) || { status: 'disabled' } }) }) });
   if (wechat) { queue.on('settled', () => { void wechat.flush(); }); wechat.start(); }
   reminders.start();
   if (silverbullet && wechat) {

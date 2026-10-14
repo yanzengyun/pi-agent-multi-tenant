@@ -15,6 +15,7 @@ const store=new Store('/home/admin/.local/share/pi-agent-multi-tenant/data');
 const sb=new SilverBullet(store,JSON.parse(readFileSync('/home/admin/.config/pi-agent-multi-tenant/silverbullet.json')));
 const sandbox=new Sandbox('/run/pi-sandbox/runner.sock');
 const admin=await api('/api/login',null,'POST',login);
+const verifyInfo=process.argv.includes('--assistant-info');
 let user;
 try {
   const username='verify_sandbox_'+Date.now(),password=randomBytes(24).toString('base64url');
@@ -23,24 +24,57 @@ try {
   const auth=await api('/api/login',null,'POST',{username,password});
   const conversation=await api('/api/conversations',auth.token,'POST',{title:'合成普通用户沙箱验收'});
   const run=await api('/api/conversations/'+conversation.id+'/runs',auth.token,'POST',{
-    prompt:'这是虚构验收。请用cmd执行 TZ=Asia/Shanghai date 查询现在北京时间，修改你自己的agent.md为“FAKE_USER_STYLE：默认中文简短回复”，实际保存；然后在自己的沙箱中运行 python3 -c "print(12345)" 并回复输出。'});
+    prompt:verifyInfo ? '我的笔记网址和个人页面在哪？笔记用什么账号登录？你能帮我做什么？请核对当前账号信息后，给出完整网址和可用功能。不要修改任何内容。'
+      : '这是虚构验收。请用cmd执行 TZ=Asia/Shanghai date 查询现在北京时间，修改你自己的agent.md为“FAKE_USER_STYLE：默认中文简短回复”，实际保存；然后在自己的沙箱中运行 python3 -c "print(12345)" 并回复输出。'});
   let result;
   for(let i=0;i<130;i++) {
     result=await api('/api/runs/'+run.id,auth.token);
     if(!['queued','running'].includes(result.status))break;
     await new Promise(resolve=>setTimeout(resolve,1000));
   }
-  assert.equal(result.status,'completed');
+  assert.equal(result.status,'completed',JSON.stringify({status:result.status,error:result.error}));
   const events=(await api('/api/runs/'+run.id+'/trace',auth.token)).events;
-  for(const name of ['persona_read','persona_write','cmd']) {
-    assert.ok(events.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName===name),'Missing '+name);
+  if(!verifyInfo) {
+    for(const name of ['persona_read','persona_write','cmd']) {
+      assert.ok(events.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName===name),'Missing '+name);
+    }
+    assert.ok(events.some(e=>e.kind==='context' && !e.payload.activeTools.includes('time_now')));
+    assert.ok(events.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName==='cmd' &&
+      /\bdate\b/.test(e.payload.args.command)), 'Missing real time command');
+    assert.match(store.agentProfile(user.id),/FAKE_USER_STYLE/);
+    assert.match(result.response,/12345/);
+    console.log(JSON.stringify({ordinary_user_time_via_cmd:true,dedicated_time_tool_removed:true,ordinary_user_agent_md_saved:true,ordinary_user_sandbox_cmd:true,tool_trace_verified:true}));
   }
-  assert.ok(events.some(e=>e.kind==='context' && !e.payload.activeTools.includes('time_now')));
-  assert.ok(events.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName==='cmd' &&
-    /\bdate\b/.test(e.payload.args.command)), 'Missing real time command');
-  assert.match(store.agentProfile(user.id),/FAKE_USER_STYLE/);
-  assert.match(result.response,/12345/);
-  console.log(JSON.stringify({ordinary_user_time_via_cmd:true,dedicated_time_tool_removed:true,ordinary_user_agent_md_saved:true,ordinary_user_sandbox_cmd:true,tool_trace_verified:true}));
+  if(verifyInfo) {
+    assert.match(events.find(e=>e.kind==='context').payload.system,/自然朋友/);
+    async function runPrompt(prompt) {
+      const run=await api('/api/conversations/'+conversation.id+'/runs',auth.token,'POST',{prompt});
+      let result;
+      for(let i=0;i<130;i++) {
+        result=await api('/api/runs/'+run.id,auth.token);
+        if(!['queued','running'].includes(result.status))break;
+        await new Promise(resolve=>setTimeout(resolve,1000));
+      }
+      assert.equal(result.status,'completed',JSON.stringify({status:result.status,error:result.error}));
+      return {result,events:(await api('/api/runs/'+run.id+'/trace',auth.token)).events};
+    }
+    const info={result,events};
+    const own=sb.view(user.id),personalPage=new URL('account',login.url).href;
+    assert.ok(info.result.response.includes(own.url));assert.ok(info.result.response.includes(personalPage));
+    assert.ok(info.events.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName==='account_info'));
+    assert.match(info.result.response,new RegExp(username));
+    const page='验收/朋友笔记';
+    const saved=await runPrompt('帮我记一篇笔记，标题为“'+page+'”，内容：FAKE_NOTE_CREATE，计划周末整理书桌，目前尚未完成。请保存到我的笔记空间。');
+    assert.ok(saved.events.some(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start' && e.payload.toolName==='note_write'));
+    assert.match((await sb.file(user.id,page)).content,/FAKE_NOTE_CREATE/);
+    const updated=await runPrompt('在刚才“'+page+'”这篇笔记中补充一条：FAKE_NOTE_UPDATE，准备先整理抽屉。保留原来的内容并保存。');
+    const toolEvents=updated.events.filter(e=>e.kind==='sdk_event' && e.payload.type==='tool_execution_start');
+    const read=toolEvents.findIndex(e=>e.payload.toolName==='note_read'),write=toolEvents.findIndex(e=>e.payload.toolName==='note_write');
+    assert.ok(read>=0 && write>read);assert.ok(toolEvents[write].payload.args.etag);
+    const content=(await sb.file(user.id,page)).content;
+    assert.match(content,/FAKE_NOTE_CREATE/);assert.match(content,/FAKE_NOTE_UPDATE/);
+    console.log(JSON.stringify({default_friend_persona_injected:true,own_links_via_account_info:true,real_note_create:true,real_note_read_before_update:true,existing_note_preserved:true}));
+  }
 } finally {
   if(user) {
     const row=store.userById(user.id);

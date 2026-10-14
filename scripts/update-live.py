@@ -24,7 +24,8 @@ subprocess.run(['systemctl','stop','pi-multi-tenant'],check=True)
 backup=Path('/home/admin/.local/share/pi-agent-multi-tenant/backups')/time.strftime('%Y%m%d-%H%M%S');backup.mkdir(mode=0o700,parents=True)
 c=sqlite3.connect('file:'+str(db)+'?mode=ro',uri=True);target=sqlite3.connect(str(backup/'assistant.sqlite'));c.backup(target);target.close()
 before={'users':c.execute('SELECT id,username,password,role FROM users ORDER BY id').fetchall(),
- 'bindings':c.execute('SELECT id,user_id,bot_id,remote_user,token,base_url,conversation_id FROM wechat_bindings ORDER BY id').fetchall()}
+ 'bindings':c.execute('SELECT id,user_id,bot_id,remote_user,token,base_url,conversation_id FROM wechat_bindings ORDER BY id').fetchall(),
+ 'profiles':c.execute('SELECT user_id,content FROM agent_profiles ORDER BY user_id').fetchall()}
 digest=hashlib.sha256(json.dumps(before).encode()).hexdigest();c.close()
 (backup/'identity-hash.txt').write_text(digest)
 base=Path('/home/admin/pi-agent-multi-tenant-live')
@@ -79,10 +80,11 @@ else:raise SystemExit('New backend failed health check')
 subprocess.run(['systemctl','reload','nginx'],check=True)
 c=sqlite3.connect('file:/home/admin/.local/share/pi-agent-multi-tenant/data/assistant.sqlite?mode=ro',uri=True)
 after={'users':c.execute('SELECT id,username,password,role FROM users ORDER BY id').fetchall(),
- 'bindings':c.execute('SELECT id,user_id,bot_id,remote_user,token,base_url,conversation_id FROM wechat_bindings ORDER BY id').fetchall()};c.close()
+ 'bindings':c.execute('SELECT id,user_id,bot_id,remote_user,token,base_url,conversation_id FROM wechat_bindings ORDER BY id').fetchall(),
+ 'profiles':c.execute('SELECT user_id,content FROM agent_profiles ORDER BY user_id').fetchall()};c.close()
 assert hashlib.sha256(json.dumps(after).encode()).hexdigest()==(backup/'identity-hash.txt').read_text(),'Identity changed unexpectedly'
 pid=subprocess.check_output(['runuser','-u','admin','--','tmux','display-message','-p','-t','=pi-wechat:','#{pane_pid}'],text=True).strip();assert pid==(backup/'personal-pid.txt').read_text()
-print(json.dumps({'live_updated':True,'existing_users_and_bindings_preserved':True,'personal_pid_unchanged':True,'backup':str(backup)}))
+print(json.dumps({'live_updated':True,'existing_users_and_bindings_preserved':True,'custom_personas_preserved':True,'personal_pid_unchanged':True,'backup':str(backup)}))
 '''.replace('NGINX',repr(nginx))
     subprocess.run(ssh+['python3 -'],input=finish,text=True,check=True)
 except Exception:

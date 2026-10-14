@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, chmodSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_AGENT_PROFILE } from './persona.mjs';
 
 export class Store {
   constructor(directory) {
@@ -168,14 +169,17 @@ export class Store {
       return { id: user.id, username: user.username, role: user.role };
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
-  agentProfile(userId) { return this.db.prepare('SELECT content FROM agent_profiles WHERE user_id=?').get(userId)?.content || ''; }
+  agentProfile(userId) {
+    const content = this.db.prepare('SELECT content FROM agent_profiles WHERE user_id=?').get(userId)?.content;
+    return content?.trim() ? content : DEFAULT_AGENT_PROFILE;
+  }
   setAgentProfile(userId, content) {
     this.requireUsable(userId);
     if (typeof content !== 'string' || content.length > 8000) throw new Error('Invalid persona');
     const workspace = join(this.directory, 'tenants', userId, 'workspace');
     mkdirSync(workspace, { recursive: true, mode: 0o700 });
     const file = join(workspace, 'AGENTS.md');
-    writeFileSync(file, content, { mode: 0o600 }); chmodSync(file, 0o600);
+    writeFileSync(file, content.trim() ? content : DEFAULT_AGENT_PROFILE, { mode: 0o600 }); chmodSync(file, 0o600);
     this.db.prepare('INSERT INTO agent_profiles VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET content=excluded.content').run(userId, content);
   }
   memory(userId) { return this.db.prepare('SELECT content FROM memories WHERE user_id=?').get(userId)?.content || ''; }

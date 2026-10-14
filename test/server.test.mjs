@@ -42,6 +42,31 @@ async function completed(api, token, id) {
   throw new Error('Run did not finish');
 }
 
+test('account links are assigned from authenticated identity and configured public origin', async t => {
+  const engine = { run: async ctx => JSON.stringify(ctx.accountInfo('bob')) };
+  const silverbullet = { view: userId => ({ status: 'ready', url: 'https://notes.example/users/' + userId + '/', username: 'notes_' + userId, passwordUnified: true }), tools: () => null, close: async () => {} };
+  const { api, create } = await fixture(t, engine, { silverbullet, origin: 'https://assistant.example', basePath: '/assistant' });
+  const a = await create('alice'), b = await create('bob');
+  const conversation = (await api('/api/conversations', { token: a.token, method: 'POST', data: {} })).data;
+  const run = (await api('/api/conversations/' + conversation.id + '/runs', { token: a.token, method: 'POST', data: { prompt: b.user.id } })).data;
+  const result = await completed(api, a.token, run.id); assert.equal(result.status, 'completed');
+  const info = JSON.parse(result.response);
+  assert.equal(info.username, 'alice');
+  assert.equal(info.personalPageUrl, 'https://assistant.example/assistant/account');
+  assert.equal(info.notes.url, 'https://notes.example/users/' + a.user.id + '/');
+  assert.ok(!result.response.includes(b.user.id));
+  assert.ok(!/password|token/i.test(JSON.stringify(Object.keys(info))));
+});
+
+test('account info does not invent URLs or note availability when unconfigured', async t => {
+  const { api, create } = await fixture(t, { run: async ctx => JSON.stringify(ctx.accountInfo()) });
+  const user = await create('alice');
+  const c = (await api('/api/conversations', { token: user.token, method: 'POST', data: {} })).data;
+  const run = (await api('/api/conversations/' + c.id + '/runs', { token: user.token, method: 'POST', data: { prompt: '我的笔记在哪' } })).data;
+  const result = await completed(api, user.token, run.id); assert.equal(result.status, 'completed');
+  assert.deepEqual(JSON.parse(result.response), { username: 'alice', personalPageUrl: null, notes: { status: 'disabled' } });
+});
+
 test('administrator traces show the selected user memory and reject foreign run IDs', async t => {
   const { api, admin, create } = await fixture(t);
   const alice = await create('alice'), bob = await create('bob');

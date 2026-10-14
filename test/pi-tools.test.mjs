@@ -46,6 +46,24 @@ test('SDK runs without a sandbox expose no command or dedicated time tools', asy
   assert.equal(store.run(user.id, run.id).status, 'completed');
 });
 
+test('account info returns server supplied links and only the active capabilities', async t => {
+  const { store, queue } = fixture(t, async (tools, prompt, system) => {
+    const tool = tools.find(tool => tool.name === 'account_info');
+    assert.ok(tool, 'Missing account info tool');
+    assert.match(system, /自然朋友/);
+    const info = JSON.parse((await tool.execute('fake', { userId: 'another-user', url: 'https://other.example' })).content[0].text);
+    assert.equal(info.personalPageUrl, 'https://assistant.example/assistant/account');
+    assert.equal(info.notes.url, 'https://assistant.example/users/own-space/');
+    assert.deepEqual(info.availableTools, tools.map(tool => tool.name));
+    assert.ok(!info.availableTools.some(name => ['cmd', 'web_search', 'voice_reply', 'time_now'].includes(name)));
+    return 'FAKE_OK';
+  }, () => ({ accountInfo: () => ({ personalPageUrl: 'https://assistant.example/assistant/account', notes: { status: 'ready', url: 'https://assistant.example/users/own-space/' } }) }));
+  const user = store.createUser('fake_alice', 'fake'), conversation = store.createConversation(user.id, 'fake');
+  const run = store.createRun(user.id, conversation.id, '我的笔记在哪，你能做什么？');
+  const settled = new Promise(resolve => queue.once('settled', resolve)); queue.kick(); await settled;
+  assert.equal(store.run(user.id, run.id).status, 'completed');
+});
+
 test('agent.md requests use persona tools and update only the authenticated user', async t => {
   const { store, queue } = fixture(t, async (tools, prompt, system) => {
     assert.match(system, /agent\.md/);
@@ -72,11 +90,12 @@ test('persona draft SDK runs keep only the read tool', async t => {
     assert.deepEqual(tools.map(tool => tool.name), ['persona_read']); return 'FAKE_DRAFT';
   });
   const user = store.createUser('fake_alice', 'fake'), conversation = store.createConversation(user.id, 'fake');
+  const before = store.agentProfile(user.id);
   const run = store.createRun(user.id, conversation.id, '生成草稿', 'persona_draft');
   const settled = new Promise(resolve => queue.once('settled', resolve));
   queue.kick(); await settled;
   assert.equal(store.run(user.id, run.id).status, 'completed');
-  assert.equal(store.agentProfile(user.id), '');
+  assert.equal(store.agentProfile(user.id), before);
 });
 
 

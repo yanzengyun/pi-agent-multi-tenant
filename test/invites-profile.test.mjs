@@ -23,6 +23,22 @@ async function fixture(t, options = {}) {
   return { directory, store, app, api, admin, invite, register };
 }
 
+test('default friend persona is editable without replacing another user preferences', async t => {
+  const { api, invite, register, store } = await fixture(t);
+  const a = (await register(await invite(), 'alice')).data;
+  const b = (await register(await invite(), 'bob')).data;
+  const initial = (await api('/api/account/agents', a.token)).data.content;
+  assert.match(initial, /自然朋友/);
+  assert.match(initial, /笔记/);
+  assert.equal(store.db.prepare('SELECT content FROM agent_profiles WHERE user_id=?').get(a.user.id), undefined);
+  await api('/api/account/agents', b.token, 'PUT', { content: 'FAKE_BOB_STYLE' });
+  await api('/api/account/agents', a.token, 'PUT', { content: 'FAKE_ALICE_STYLE' });
+  assert.equal((await api('/api/account/agents', a.token)).data.content, 'FAKE_ALICE_STYLE');
+  await api('/api/account/agents', a.token, 'PUT', { content: '' });
+  assert.equal((await api('/api/account/agents', a.token)).data.content, initial);
+  assert.equal((await api('/api/account/agents', b.token)).data.content, 'FAKE_BOB_STYLE');
+});
+
 test('registration requires a valid single-use invitation and cannot grant admin', async t => {
   const { api, admin, invite, register, store } = await fixture(t);
   assert.equal((await api('/api/register', null, 'POST', { username: 'alice', password: 'user-fixture-password' })).status, 400);
@@ -64,7 +80,7 @@ test('own AGENTS preferences are mirrored and injected without granting cross-us
   const alice = (await register(await invite(), 'alice')).data, bob = (await register(await invite(), 'bob')).data;
   const content = 'FAKE_ALICE_STYLE: 请简短回复。';
   assert.equal((await api('/api/account/agents', alice.token, 'PUT', { content, userId: bob.user.id, path: '/etc/passwd' })).status, 200);
-  assert.equal((await api('/api/account/agents', bob.token)).data.content, '');
+  assert.match((await api('/api/account/agents', bob.token)).data.content, /自然朋友/);
   assert.equal(readFileSync(join(directory, 'tenants', alice.user.id, 'workspace', 'AGENTS.md'), 'utf8'), content);
   assert.equal((await api('/api/admin/users', alice.token)).status, 403);
   assert.equal((await api('/api/account/agents', alice.token, 'PUT', { content: 'x'.repeat(8001) })).status, 400);
