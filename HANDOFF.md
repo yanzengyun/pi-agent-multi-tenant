@@ -2,6 +2,12 @@
 
 更新时间：2026-10-16。
 
+## 按用户要求切回MiniMax（2026-10-16 01:30，当前模型状态）
+
+- 用户要求先切回MiniMax。隔离真实SDK探测仍返回model_quota_exhausted，已明确告知额度尚未恢复，仍按明确要求切换主助手和多用户为minimax-cn/MiniMax-M3.1-Flash-Preview，medium。没有自动恢复探测或自动故障转移；DeepSeek配置/Key保留，但当前不自动兜底。
+- 主Pi空闲/model切换并更新默认settings，PID1894保持；多用户私有env改provider/model后仅重启pi-multi-tenant，健康正常并核对实际进程环境为MiniMax，用户/微信绑定/人物设定/记忆摘要保持。备份/home/admin/.local/share/pi-agent-service/backups/minimax-restore-20261016-013037/{settings.json,multi-tenant-env}。
+- 当前是配置已切回，不是额度已恢复。额度恢复前聊天/总结仍可能失败；不要将health=ok当成上游模型可用。不重跑此前失败任务、不改微信绑定。
+
 ## DeepSeek 临时兜底与微信下行排查（2026-10-16 01:01）
 
 - 主账号会话确认MiniMax 2056额度耗尽。用户要求现在DeepSeek兜底；既有私有DEEPSEEK_API_KEY可用，使用现有Pi SDK隔离合成会话实测deepseek/deepseek-flash回复OK，再用生产models.json/medium验证memory_read调用成功；不读取真实笔记或发送微信。主Pi空闲/model切换并更新默认settings，PID1894保持，备份/home/admin/.local/share/pi-agent-service/backups/deepseek-fallback-20261016-005851。MiniMax模型和Key保留。
