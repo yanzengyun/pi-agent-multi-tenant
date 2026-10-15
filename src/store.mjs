@@ -3,6 +3,7 @@ import { mkdirSync, chmodSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_AGENT_PROFILE } from './persona.mjs';
+import { changeMemory, memorySnapshot } from './memory.mjs';
 
 export class Store {
   constructor(directory) {
@@ -186,6 +187,16 @@ export class Store {
   writeMemory(userId, content) {
     this.requireUsable(userId);
     this.db.prepare('INSERT INTO memories VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET content=excluded.content').run(userId, content);
+  }
+  changeMemory(userId, input) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.requireUsable(userId);
+      const content = changeMemory(this.memory(userId), input);
+      this.writeMemory(userId, content);
+      this.db.exec('COMMIT');
+      return memorySnapshot(content);
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   createConversation(userId, title) {
     this.requireUsable(userId);

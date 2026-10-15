@@ -34,6 +34,47 @@ function fixture(t, action, contextFactory) {
   return { store, queue };
 }
 
+test('SDK memory_write appends by default and keeps existing user facts', async t => {
+  const { store, queue } = fixture(t, async tools => {
+    await tools.find(tool => tool.name === 'memory_write').execute('save', { content: 'NEW_PYTHON_GOAL' });
+    return 'saved';
+  });
+  const user = store.createUser('memory_alice', 'fake');
+  store.writeMemory(user.id, 'KEEP_CHINESE_PREFERENCE');
+  const conversation = store.createConversation(user.id, 'memory');
+  const run = store.createRun(user.id, conversation.id, '记住我正在学习Python');
+  const settled = new Promise(resolve => queue.once('settled', resolve)); queue.kick(); await settled;
+  assert.equal(store.run(user.id, run.id).status, 'completed');
+  assert.equal(store.memory(user.id), 'KEEP_CHINESE_PREFERENCE\n\nNEW_PYTHON_GOAL');
+});
+
+test('SDK memory entries support scoped update, forget and explicit overwrite with next-run injection', async t => {
+  const { store, queue } = fixture(t, async (tools, prompt, system) => {
+    const find = name => tools.find(tool => tool.name === name);
+    const read = async () => JSON.parse((await find('memory_read').execute('read', {})).content[0].text);
+    if (prompt === 'check') { assert.match(system, /EXPLICIT_REWRITE/); assert.doesNotMatch(system, /ALICE_KEEP|ALICE_NEW/); return 'checked'; }
+    let snapshot = await read(); assert.equal(snapshot.content, 'ALICE_KEEP\n\nALICE_OLD');
+    await find('memory_update').execute('update', { id: snapshot.entries[1].id, content: 'ALICE_NEW', version: snapshot.version, userId: other.id });
+    await assert.rejects(find('memory_forget').execute('stale', { id: snapshot.entries[0].id, version: snapshot.version }), /memory_conflict/);
+    snapshot = await read();
+    await find('memory_forget').execute('forget', { id: snapshot.entries[1].id, version: snapshot.version, userId: other.id });
+    await assert.rejects(find('memory_write').execute('replace', { mode: 'overwrite', content: 'DROP' }), /memory_conflict/);
+    snapshot = await read();
+    await find('memory_write').execute('replace', { mode: 'overwrite', content: 'EXPLICIT_REWRITE', version: snapshot.version });
+    await assert.rejects(find('memory_write').execute('bad-mode', { mode: 'delete', content: 'bad' }), /invalid_memory_mode/);
+    return 'saved';
+  });
+  const user = store.createUser('entry_alice', 'fake'), other = store.createUser('entry_bob', 'fake');
+  store.writeMemory(user.id, 'ALICE_KEEP\n\nALICE_OLD'); store.writeMemory(other.id, 'BOB_PRIVATE');
+  const conversation = store.createConversation(user.id, 'memory');
+  for (const prompt of ['edit', 'check']) {
+    const run = store.createRun(user.id, conversation.id, prompt);
+    const settled = new Promise(resolve => queue.once('settled', resolve)); queue.kick(); await settled;
+    assert.equal(store.run(user.id, run.id).status, 'completed');
+  }
+  assert.equal(store.memory(user.id), 'EXPLICIT_REWRITE'); assert.equal(store.memory(other.id), 'BOB_PRIVATE');
+});
+
 test('SDK quota error survives model failure normalization without exposing provider text', async t => {
   const { store, queue } = fixture(t, async (_tools, _prompt, _system, session) => {
     session.final = { stopReason: 'error', errorMessage: '429 已达到 Token Plan 用量上限 (2056) fake-private-key' };

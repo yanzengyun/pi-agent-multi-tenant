@@ -2,6 +2,14 @@
 
 更新时间：2026-10-15。
 
+## 多用户记忆默认追加与按条修改（2026-10-15 20:59，已上线）
+
+- 用户确认把SQLite记忆从整段覆盖改为默认追加，并提供按条修改/遗忘、显式完整替换。新增src/memory.mjs，沿用memories(user_id,content)，无表迁移；旧原文按空行分段，ID由内容hash及重复次序派生，version为完整原文hash。读取/追加保持旧内容原样，新增内容由后端拼接，不让模型重新生成旧记忆。
+- memory_read返回content/version/entries；memory_write默认append，仅新增事实，mode=overwrite必须显式传入并有最新version；memory_update/memory_forget按id/version处理指定段落。同段包含多个事实时提示用update保留其余事实；ID非跨版本永久主键，修改后重读。总容量仍8000字符，超限拒绝、保留原文，不自动截断、去重或解决矛盾。删除不清聊天/笔记/历史备份，无专用恢复工具。
+- Store.changeMemory在BEGIN IMMEDIATE事务内读最新内容、校验版本并写入，防止追加丢更新和旧快照覆盖。认证UUID闭包绑定，不接受模型选用户；人物设定草稿仍仅persona_read，记忆变更在草稿上下文也拒绝。PUT /api/memory保持原有用户直接编辑整份记忆的显式替换语义；专用AI工具改用新流程。
+- 先复现旧SDK memory_write丢弃原有偏好，再通过本地/阿里云94项测试，覆盖保留旧文、修改/遗忘、冲突、双连接、容量、隔离及下一请求注入。scripts/verify-memory-live.mjs在临时库/独立新会话下由真实MiniMax完成4轮append/update/forget/overwrite，另一用户不变、跨会话保留，报告test/memory-live-verification.json；无真实用户数据或微信，临时库清理。追加不强制先memory_read（后端原子合并）；破坏性编辑必须持有有效版本。
+- 已update-live上线，备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261015-205921；部署校验新增memories摘要，原用户/微信绑定/人物设定/记忆原文均保持，主Pi PID1894保持。仅多用户后端短暂重启，主账号pi-memory不改；trace继续停用，无新增后台扫描、qmd或向量模型。README/docs/memory.md和源码同步GitHub及服务器。
+
 ## note_list / note_search（2026-10-15，主账号与多用户均已上线）
 
 - 用户确认检索采用rg并要求补齐列表和搜索。共享src/note-catalog.mjs接入SilverBullet.tools与Pi SDK，系统提示补发现→检索→读原文及不完整范围说明。列表只返回元数据，支持目录/最近修改/offset分页，默认20最多50；默认隐藏Library、CONFIG与归档，includeArchived显式开启。搜索按页返回URL/最多3段及原文行号，字面匹配忽略大小写，每次最多200页/2MB/200匹配行；跳过过大/并发删除页及返回上限均incomplete，权限/超时失败不当空结果。无需浏览器/向量库，无持久搜索缓存。

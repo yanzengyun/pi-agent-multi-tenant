@@ -32,6 +32,10 @@ export class RunQueue extends EventEmitter {
         if (eventCount++ < 500) this.store.trace(run.id, kind, payload);
       };
       const personaDraft = this.store.runMode(run.id) === 'persona_draft';
+      const changeMemory = input => {
+        if (personaDraft) throw new Error('Draft cannot change memory');
+        return this.store.changeMemory(run.user_id, input);
+      };
       const context = {
         personaDraft,
         ...(personaDraft ? {} : this.contextFactory(run.user_id, run)),
@@ -44,11 +48,8 @@ export class RunQueue extends EventEmitter {
           if (personaDraft) throw new Error('Draft cannot change settings');
           this.store.setAgentProfile(run.user_id, text);
         },
-        writeMemory: text => {
-          if (personaDraft) throw new Error('Draft cannot change memory');
-          if (typeof text !== 'string' || text.length > 8000) throw new Error('Memory is too large');
-          this.store.writeMemory(run.user_id, text);
-        },
+        writeMemory: content => changeMemory({ content }),
+        changeMemory,
         setSdkFile: file => this.store.setSdkFile(run.user_id, run.conversation_id, file),
       };
       try {
