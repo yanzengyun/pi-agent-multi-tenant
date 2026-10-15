@@ -197,7 +197,8 @@ export class WechatManager {
     const signal = AbortSignal.any([this.abort.signal, ...(runSignal ? [runSignal] : []),
       ...(connectionSignal ? [connectionSignal] : []), AbortSignal.timeout(5000)]);
     try {
-      await this.client.send(binding, inbox, '✅ 已收到，pi 处理中...', `pi-${inbox.id}-processing`, signal);
+      const response = await this.client.send(binding, inbox, '✅ 已收到，pi 处理中...', `pi-${inbox.id}-processing`, signal);
+      this.accepted(inbox, 'processing', response);
     } catch (error) {
       if (error.message === 'wechat_session_expired') this.store.bindingStatus(binding.id, 'expired');
       // A failed notice must not block the task or arrive after its final reply.
@@ -207,6 +208,12 @@ export class WechatManager {
     if (this.closed) return;
     if (this.flushWork) return this.flushWork;
     this.flushWork = this.deliver().finally(() => { this.flushWork = null; }); return this.flushWork;
+  }
+  accepted(inbox, phase, response) {
+    this.store.trace(inbox.run_id, 'wechat_api_accepted', { phase,
+      ...(typeof response?.ret === 'number' ? { ret: response.ret } : {}),
+      ...(typeof response?.errcode === 'number' ? { errcode: response.errcode } : {}),
+      upstreamMessageIdPresent: !!response?.message_id, clientDeliveryConfirmed: false });
   }
   async deliver() {
     for (const inbox of this.store.deliveries()) {
@@ -224,7 +231,8 @@ export class WechatManager {
         if (!voice?.text_sent) {
           for (let i = 0; i < chunks.length; i++) {
             if (this.closed || !this.current(binding)) break;
-            await this.client.send(binding, inbox, chunks[i], `pi-${inbox.id}-${i}`, signal);
+            const response = await this.client.send(binding, inbox, chunks[i], `pi-${inbox.id}-${i}`, signal);
+            this.accepted(inbox, 'reply', response);
           }
           if (!this.closed && this.current(binding) && voice) this.store.voiceTextSent(inbox.user_id, inbox.run_id);
         }

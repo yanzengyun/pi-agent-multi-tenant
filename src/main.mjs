@@ -14,17 +14,19 @@ const host = process.env.ASSISTANT_HOST || '127.0.0.1';
 if (!['127.0.0.1', '::1'].includes(host)) throw new Error('Development server must bind loopback; publish through an authenticated HTTPS gateway later');
 const mode = process.env.ASSISTANT_ENGINE || 'mock';
 if (!['mock', 'pi'].includes(mode)) throw new Error('Unknown engine');
+const provider = process.env.ASSISTANT_PROVIDER || 'minimax-cn';
+const modelKey = provider === 'deepseek' ? process.env.DEEPSEEK_API_KEY : process.env.MINIMAX_CN_API_KEY;
 const engine = mode === 'mock' ? new MockEngine() : new PiEngine({
   sdkModule: process.env.PI_SDK_MODULE || (existsSync('./sdk-runtime/node_modules/@earendil-works/pi-coding-agent/dist/index.js')
     ? resolve('./sdk-runtime/node_modules/@earendil-works/pi-coding-agent/dist/index.js') : '@earendil-works/pi-coding-agent'),
   modelsPath: resolve(process.env.ASSISTANT_MODELS_FILE || './models.json'),
-  provider: process.env.ASSISTANT_PROVIDER || 'minimax-cn',
-  model: process.env.ASSISTANT_MODEL || 'MiniMax-M3.1-Flash-Preview',
-  thinkingLevel: 'medium', apiKey: process.env.MINIMAX_CN_API_KEY,
+  provider,
+  model: process.env.ASSISTANT_MODEL || (provider === 'deepseek' ? 'deepseek-flash' : 'MiniMax-M3.1-Flash-Preview'),
+  thinkingLevel: 'medium', apiKey: modelKey,
   searchKey: process.env.ASSISTANT_SEARCH === 'on' ? process.env.MINIMAX_CN_API_KEY : undefined,
 });
 if (mode === 'pi') {
-  if (!process.env.MINIMAX_CN_API_KEY) throw new Error('Missing model credential');
+  if (!modelKey) throw new Error('Missing model credential');
   await engine.initialize();
 }
 const store = new Store(process.env.ASSISTANT_DATA_DIR || './.data');

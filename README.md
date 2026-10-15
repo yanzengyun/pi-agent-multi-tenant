@@ -179,7 +179,7 @@ ASSISTANT_SEARCH=on
 ASSISTANT_TTS=on
 ```
 
-模型、搜索和语音当前集成 MiniMax；每个用户共用服务端提供的密钥。公网使用需配置 HTTPS、固定 Origin 和安全 Cookie。笔记需要独立配置 SilverBullet，命令工具需要单独安装沙箱执行服务；详见 [部署指南](docs/deployment.md)。
+聊天模型支持 MiniMax 和 DeepSeek，搜索和语音使用 MiniMax；每个用户共用服务端提供的密钥。DeepSeek 切换方法见[部署指南](docs/deployment.md)。公网使用需配置 HTTPS、固定 Origin 和安全 Cookie。笔记需要独立配置 SilverBullet，命令工具需要单独安装沙箱执行服务。
 
 ## 当前边界与后续方向
 

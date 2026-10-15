@@ -35,6 +35,8 @@ ASSISTANT_TTS=on
 
 管理员初始账号为 `admin`；密码至少 12 位，仅用于首次初始化。后端默认使用锁定的 `sdk-runtime`，无需安装另一套常驻 Pi。`ASSISTANT_SEARCH` 和 `ASSISTANT_TTS` 可设为 `off`；如仅体验页面，设置 `ASSISTANT_ENGINE=mock`、关闭微信并暂不配置笔记。
 
+需要用 DeepSeek 临时兜底时，将 `ASSISTANT_PROVIDER=deepseek`、`ASSISTANT_MODEL=deepseek-flash`，并在私有环境文件中设置 `DEEPSEEK_API_KEY`，再重启后端。聊天凭据按所选 provider 使用；MiniMax 搜索和 TTS 仍使用 `MINIMAX_CN_API_KEY`。这是显式切换当前服务模型，不是自动故障转移；恢复 MiniMax 时改回原配置。主账号的原生 Pi 会话需单独切换模型。
+
 启动：
 
 ```sh

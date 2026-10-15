@@ -216,6 +216,22 @@ test('processing notice precedes execution and reply; replay does not resend it'
   await queue.close();
 });
 
+test('send evidence records API acceptance without claiming client delivery or storing response secrets', async t => {
+  const { store, alice, manager, client } = fixture(t);
+  const binding = store.bindWechat(alice.id, { token: 'fake-token', botId: 'evidence-bot', remoteUser: 'evidence-peer', baseUrl: 'https://ilinkai.weixin.qq.com' });
+  manager.ingest(binding, { message_type: 1, message_id: 'evidence-message', from_user_id: binding.remote_user,
+    context_token: 'private-context', item_list: [{ type: 1, text_item: { text: 'hello' } }] });
+  const run = store.pending()[0];
+  client.send = async () => ({ ret: 0, message_id: 'private-upstream-id', token: 'private-token', errmsg: 'private-response' });
+  const queue = new RunQueue(store, { async run() { return 'done'; } }, { beforeRun: r => manager.processing(r) });
+  await queue.work; await manager.flush();
+  const events = store.traces(alice.id, run.id).filter(e => e.kind === 'wechat_api_accepted');
+  assert.deepEqual(events.map(e => e.payload), ['processing', 'reply'].map(phase => ({ phase, ret: 0,
+    upstreamMessageIdPresent: true, clientDeliveryConfirmed: false })));
+  assert.doesNotMatch(JSON.stringify(events), /private-/);
+  await queue.close();
+});
+
 test('failed processing notice does not block execution or final delivery', async t => {
   const { store, alice, manager, client } = fixture(t);
   const binding = store.bindWechat(alice.id, { token: 'fake-token', botId: 'failure-bot', remoteUser: 'failure-peer', baseUrl: 'https://ilinkai.weixin.qq.com' });

@@ -1,6 +1,15 @@
 # 开发交接
 
-更新时间：2026-10-15。
+更新时间：2026-10-16。
+
+## DeepSeek 临时兜底与微信下行排查（2026-10-16 01:01）
+
+- 主账号会话确认MiniMax 2056额度耗尽。用户要求现在DeepSeek兜底；既有私有DEEPSEEK_API_KEY可用，使用现有Pi SDK隔离合成会话实测deepseek/deepseek-flash回复OK，再用生产models.json/medium验证memory_read调用成功；不读取真实笔记或发送微信。主Pi空闲/model切换并更新默认settings，PID1894保持，备份/home/admin/.local/share/pi-agent-service/backups/deepseek-fallback-20261016-005851。MiniMax模型和Key保留。
+- 多用户main原来无论provider均传MINIMAX_CN_API_KEY，现按deepseek读取DEEPSEEK_API_KEY，provider切换时默认模型也对应flash。搜索/TTS仍用MiniMax独立Key。私有环境设置ASSISTANT_PROVIDER=deepseek、ASSISTANT_MODEL=deepseek-flash；这是显式临时切换，不是自动故障转移/自动恢复，也不自动重跑已经失败的任务。
+- 本机96项测试通过，新增wechat_api_accepted小记录，仅保存processing/reply阶段、数值ret/errcode、上游message_id是否存在、clientDeliveryConfirmed=false；不保存响应正文/凭据/ID。原delivery=sent只代表接口调用成功，不能作为手机实际送达证明。不重启主助手或恢复provider trace采集。
+- 已update-live上线，备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261016-010121；私有模型环境原件备份deepseek-env-20261016-010120/env。用户/绑定/人物设定/记忆摘要和主Pi PID保持，健康检查正常，运行进程provider/model/key存在性核验通过。
+- 新Lucy已扫码确认，之前4轮问候模型成功且接口返回正常，但用户手机反馈均未收到。用户测试001在00:57:44进入Lucy收件箱，模型quota失败，固定提示接口也记为sent；这已证明该条入站可达，尚未证明下行送达。排查独立updates未修改游标、身份或队列。腾讯官方项目issues/264、290有同账号下行不可见且其他账号正常的同类报告，只能作为上游账号投递异常线索，不能断言风控原因。上线后已请用户发测试002，以新增回执/正文返回元数据核验；尚待手机确认，不能称Lucy已修好。
+- 后续测试002在01:02:22进入新Lucy，DeepSeek完成55字符回复；processing/reply均ret=0、upstreamMessageIdPresent=false，用户确认手机两者均不可见。已定位这次失败在接口受理之后的下行，尚无客户端送达凭证。官方issues/268中协作者曾对同类个案确认风控并处理恢复；不等于Lucy已获同样诊断，仍需腾讯核查该账号的投递/配对状态。不做自动重发、盲目清账号或反复重绑。
 
 ## README 多用户笔记截图（2026-10-15）
 
