@@ -10,7 +10,7 @@ import { Store } from '../src/store.mjs';
 function fixture(t, action, contextFactory) {
   const directory = mkdtempSync(join(tmpdir(), 'pi-tools-'));
   const store = new Store(directory), engine = new PiEngine({ provider: 'fake', model: 'fake' });
-  engine.Type = { Object: value => value, String: value => value, Number: value => value, Optional: value => value };
+  engine.Type = { Object: value => value, String: value => value, Number: value => value, Boolean: value => value, Optional: value => value };
   engine.sdk = {
     createExtensionRuntime: () => ({}),
     ModelRuntime: { create: async () => ({ setRuntimeApiKey: async () => {}, getModel: () => ({}) }) },
@@ -148,4 +148,32 @@ test('voice tool prepares only the own run, exposes no receiver and remains abse
   store.createRun(user.id, conversation.id, 'draft', 'persona_draft');
   settled = new Promise(resolve => queue.once('settled', resolve)); queue.kick(); await settled;
   assert.equal(calls.length, 1);
+});
+
+test('note lifecycle tools use the scoped transport and are absent from persona drafts', async t => {
+  const calls = [];
+  const { store, queue } = fixture(t, async (tools, prompt, system) => {
+    if (prompt === 'draft') {
+      assert.deepEqual(tools.map(tool => tool.name), ['persona_read']); return 'FAKE_DRAFT';
+    }
+    assert.match(system, /默认归档/);
+    for (const name of ['note_archive', 'note_restore', 'note_delete']) {
+      const tool = tools.find(item => item.name === name); assert.ok(tool);
+      assert.ok(!('userId' in tool.parameters) && !('url' in tool.parameters));
+      await tool.execute('fake', { page: 'demo', etag: '"read-version"', confirm: true, reason: 'requested', userId: 'foreign', url: 'https://other.example' });
+    }
+    return 'FAKE_OK';
+  }, userId => ({ notes: {
+    archive: async (...args) => calls.push({ userId, name: 'archive', args }),
+    restore: async (...args) => calls.push({ userId, name: 'restore', args }),
+    remove: async (...args) => calls.push({ userId, name: 'delete', args }),
+  } }));
+  const user = store.createUser('note_alice', 'fake'), conversation = store.createConversation(user.id, 'fake');
+  for (const [prompt, mode] of [['notes', undefined], ['draft', 'persona_draft']]) {
+    const run = store.createRun(user.id, conversation.id, prompt, mode);
+    const settled = new Promise(resolve => queue.once('settled', resolve)); queue.kick(); await settled;
+    assert.equal(store.run(user.id, run.id).status, 'completed');
+  }
+  assert.deepEqual(calls.map(item => [item.userId, item.name]), [[user.id, 'archive'], [user.id, 'restore'], [user.id, 'delete']]);
+  assert.ok(calls.every(item => !JSON.stringify(item.args).includes('foreign')));
 });

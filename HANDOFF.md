@@ -2,6 +2,14 @@
 
 更新时间：2026-10-15。
 
+## 多用户单篇笔记归档、恢复与永久删除（2026-10-15）
+
+- 用户要求接着主助手部分代码开发多用户SB删除。已只读核对10-15聊天及主账号新增extensions/note-delete.ts：它写死personal，仅给主账号安装，未修改多用户后端；没有跟随其“装进租户沙箱”的错误架构判断。主SB3000与多用户SB32216是两套服务，多用户原有按UUID Space/受限token隔离有效。
+- 多用户新增note_archive/note_restore/note_delete。普通删除默认复制原文到本人归档/YYYY-MM/<随机UUID>/原路径.md，回读一致后用调用者已读etag条件删除原页；重复归档不覆盖。恢复先读取归档版本，create-only恢复原路径，再按归档etag删除备份；原位置有内容则拒绝。永久删除要求明确用户请求、confirm=true及note_read的etag，不清理历史备份。仅单篇Markdown，归档原路径<=240字、正文<=30000字符，不增加管理台页面或批量清理。
+- 文件API DELETE强制If-Match，回读404才报已移除；丢响应不盲目重复删除。复制/删除不是原子移动，中途冲突保留副本并返回preserved_copy。审计在tenants/<uuid>/notes/audit.jsonl，600权限，只记动作/路径/etag/字节数/hash/原因，不记正文/token；笔记操作期间禁止同用户重叠移动或删除用户。上下文由认证userId固定，模型参数不能选space/userId/url，persona草稿仍只读。
+- 先复现旧tools.archive不存在，再通过79项Node测试（含副本损坏不删除原页、删除丢响应回读及操作互斥）。真实SB用合成两个用户验证If-Match拒绝错误版本、原文保留、恢复同名拒绝、重复归档路径唯一、彻底删除及跨租户token拒绝；真实MiniMax三轮实际note_read→archive/restore/delete通过，confirm=true已验证。脚本verify-note-lifecycle-live.mjs，临时应用DB/聊天删除，synthetic SB账号撤权并移除，仅留预期无成员测试Space；无真实用户笔记或微信消息。
+- 已update-live上线，备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261015-112536；生产用户/绑定/人设摘要及主Pi PID保持。只更新多用户，没有重载主账号临时note-delete扩展。源码及文档收尾同步GitHub与服务器Git。
+
 ## 模型额度耗尽固定提醒（2026-10-15）
 
 - 用户要求额度耗尽时主动说明，避免主助手静默失败。共享model-errors只识别明确quota/2056，不把普通429限流当额度耗尽。PiEngine不再丢掉该类别，RunQueue存model_quota_exhausted安全码，WechatManager直接用固定文字回复，无模型调用、不泄露上游错误或密钥。

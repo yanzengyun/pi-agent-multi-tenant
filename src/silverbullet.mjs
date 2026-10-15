@@ -1,17 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-
-export function notePath(page) {
-  if (typeof page !== 'string' || page.length > 120 || !page.trim() || /[\\%?#\x00-\x1f]/.test(page) ||
-      page.split('/').some(part => !part || part.startsWith('.'))) throw new Error('invalid_note_path');
-  const name = page.endsWith('.md') ? page : page + '.md';
-  return name.split('/').map(encodeURIComponent).join('/');
-}
+import { notePath, NoteLifecycle } from './note-lifecycle.mjs';
+export { notePath } from './note-lifecycle.mjs';
 
 export class SilverBullet {
   constructor(store, config) {
     this.store = store; this.config = config; this.cookie = null; this.loginWork = null; this.provisions = new Map(); this.loginChanges = new Map();
+    this.noteOperations = new Map();
     const url = new URL(config.baseUrl);
     if (url.username || url.password || !['http:', 'https:'].includes(url.protocol)) throw new Error('invalid_sb_url');
     this.base = config.baseUrl.replace(/\/$/, '');
@@ -166,7 +162,7 @@ export class SilverBullet {
     }
     return this.view(user.id);
   }
-  busy(userId) { return this.provisions.has(userId) || this.loginChanges.has(userId); }
+  busy(userId) { return this.provisions.has(userId) || this.loginChanges.has(userId) || this.noteOperations.has(userId); }
   async archiveUser(user) {
     const item = this.store.integration(user.id, 'silverbullet');
     if (!item) return null;
@@ -205,11 +201,17 @@ export class SilverBullet {
     this.store.requireUsable(userId);
     const item = this.store.integration(userId, 'silverbullet');
     if (item?.status !== 'ready') throw new Error('sb_not_ready');
+    if (item.state.prefix !== '/users/' + userId || item.state.folder !== 'spaces/pi-tenants/' + userId) throw new Error('sb_space_ownership_mismatch');
+    if (!['GET', 'PUT', 'DELETE'].includes(method)) throw new Error('invalid_note_method');
     const url = this.base + item.state.prefix + '/.fs/' + notePath(page);
     const headers = { Authorization: `Bearer ${item.state.token}`, 'Content-Type': 'text/markdown; charset=utf-8', 'X-Sync-Mode': 'true' };
     if (method === 'PUT') {
       if (typeof content !== 'string' || content.length > 30000) throw new Error('invalid_note_content');
       if (etag) headers['If-Match'] = etag; else headers['If-None-Match'] = '*';
+    }
+    if (method === 'DELETE') {
+      if (typeof etag !== 'string' || !etag || etag.length > 256) throw new Error('note_revision_required');
+      headers['If-Match'] = etag;
     }
     const response = await fetch(url, { method, redirect: 'error', headers, body: content,
       signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(15000)]) });
@@ -222,8 +224,18 @@ export class SilverBullet {
   }
   tools(userId) {
     if (this.store.integration(userId, 'silverbullet')?.status !== 'ready') return null;
+    const notes = new NoteLifecycle((page, options) => this.file(userId, page, options), this.store.directory, userId);
+    const operation = work => {
+      this.store.requireUsable(userId);
+      if (this.busy(userId)) throw new Error('sb_busy');
+      const pending = Promise.resolve().then(work).finally(() => this.noteOperations.delete(userId));
+      this.noteOperations.set(userId, pending); return pending;
+    };
     return { read: (page, signal) => this.file(userId, page, { signal }),
-      write: (page, content, etag, signal) => this.file(userId, page, { method: 'PUT', content, etag, signal }) };
+      write: (page, content, etag, signal) => this.file(userId, page, { method: 'PUT', content, etag, signal }),
+      archive: (page, etag, reason, signal) => operation(() => notes.archive(page, etag, reason, signal)),
+      restore: (page, etag, signal) => operation(() => notes.restore(page, etag, signal)),
+      remove: (page, etag, confirm, reason, signal) => operation(() => notes.remove(page, etag, confirm, reason, signal)) };
   }
-  async close() { await Promise.allSettled([...this.provisions.values(), ...this.loginChanges.values()]); }
+  async close() { await Promise.allSettled([...this.provisions.values(), ...this.loginChanges.values(), ...this.noteOperations.values()]); }
 }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -61,6 +61,10 @@ async function fixture(t) {
         res.setHeader('ETag', value.etag); res.end(''); return;
       }
       if (!previous) return reply(404, {});
+      if (req.method === 'DELETE') {
+        if (!req.headers['if-match'] || req.headers['if-match'] !== previous.etag) return reply(412, {});
+        state.files.delete(key); return reply(200, { deleted: true });
+      }
       res.setHeader('ETag', previous.etag); res.end(previous.content); return;
     }
     reply(404, {});
@@ -119,6 +123,99 @@ test('note names cannot escape the assigned space or address privileged endpoint
     assert.throws(() => notePath(page), /invalid_note_path/);
   }
   assert.equal(notePath('日记/今天'), '%E6%97%A5%E8%AE%B0/%E4%BB%8A%E5%A4%A9.md');
+});
+
+test('own notes archive byte-exactly, restore without overwriting and require a read revision for deletion', async t => {
+  const { store, sb, state } = await fixture(t), alice = store.createUser('alice', 'fake'), bob = store.createUser('bob', 'fake');
+  await sb.provision(alice); await sb.provision(bob);
+  const content = '---\ntags: demo\n---\n# 原文\n\nFAKE_PRIVATE_BODY\n';
+  await sb.file(alice.id, '随手记/测试', { method: 'PUT', content });
+  await sb.file(bob.id, '随手记/测试', { method: 'PUT', content: 'BOB_KEEP' });
+  const tools = sb.tools(alice.id), original = await tools.read('随手记/测试');
+  await assert.rejects(tools.archive('随手记/测试', '"stale"'), /note_conflict/);
+  const moved = await tools.archive('随手记/测试', original.etag, 'user_request');
+  assert.match(moved.archivedPage, /^归档\/\d{4}-\d{2}\/[0-9a-f-]+\/随手记\/测试.md$/);
+  await assert.rejects(tools.read('随手记/测试'), /note_not_found/);
+  const backup = await tools.read(moved.archivedPage); assert.equal(backup.content, content);
+  assert.equal((await sb.tools(bob.id).read('随手记/测试')).content, 'BOB_KEEP');
+  await assert.rejects(sb.tools(bob.id).restore(moved.archivedPage, backup.etag), /note_not_found/);
+  await sb.file(alice.id, '随手记/测试', { method: 'PUT', content: 'NEW_KEEP' });
+  await assert.rejects(tools.restore(moved.archivedPage, backup.etag), /note_conflict/);
+  assert.equal((await tools.read(moved.archivedPage)).content, content);
+  let current = await tools.read('随手记/测试');
+  await assert.rejects(tools.remove('随手记/测试', current.etag, false), /note_delete_requires_confirmation/);
+  await assert.rejects(tools.remove('随手记/测试', '', true), /note_revision_required/);
+  await assert.rejects(tools.remove('随手记/测试', '"stale"', true), /note_conflict/);
+  await tools.remove('随手记/测试', current.etag, true);
+  await tools.restore(moved.archivedPage, backup.etag);
+  assert.equal((await tools.read('随手记/测试')).content, content);
+  await assert.rejects(tools.read(moved.archivedPage), /note_not_found/);
+  current = await tools.read('随手记/测试'); await tools.remove('随手记/测试', current.etag, true);
+  const auditPath = join(store.directory, 'tenants', alice.id, 'notes', 'audit.jsonl');
+  const audit = readFileSync(auditPath, 'utf8');
+  assert.ok(!audit.includes('FAKE_PRIVATE_BODY')); assert.ok(!audit.includes('fake-agent-token'));
+  assert.equal(statSync(auditPath).mode & 0o777, 0o600);
+  assert.ok(audit.split('\n').filter(Boolean).map(JSON.parse).some(row => row.action === 'restore'));
+});
+
+test('copy verification and final conditional delete protect concurrently edited notes', async t => {
+  const { store, sb, state } = await fixture(t), alice = store.createUser('alice', 'fake');
+  await sb.provision(alice);
+  const tools = sb.tools(alice.id);
+  await tools.write('keep', 'ORIGINAL'); const current = await tools.read('keep');
+  const originalFetch = sb.file.bind(sb); let changed = false;
+  sb.file = async (userId, page, options = {}) => {
+    if (options.method === 'DELETE' && !changed) {
+      changed = true;
+      await originalFetch(userId, page, { method: 'PUT', content: 'CONCURRENT_EDIT', etag: current.etag });
+    }
+    return originalFetch(userId, page, options);
+  };
+  await assert.rejects(tools.archive('keep', current.etag), /note_conflict/);
+  assert.equal((await tools.read('keep')).content, 'CONCURRENT_EDIT');
+  assert.ok([...state.files.values()].some(file => file.content === 'ORIGINAL'));
+});
+
+test('an invalid archive copy never removes the original', async t => {
+  const { store, sb } = await fixture(t), user = store.createUser('copy_user', 'fake');
+  await sb.provision(user); const tools = sb.tools(user.id);
+  await tools.write('keep', 'KEEP_ORIGINAL'); const current = await tools.read('keep');
+  const file = sb.file.bind(sb); let deletes = 0;
+  sb.file = async (id, page, options = {}) => {
+    if (options.method === 'DELETE') deletes++;
+    const result = await file(id, page, options);
+    return page.startsWith('归档/') && !options.method ? { ...result, content: 'CORRUPTED_COPY' } : result;
+  };
+  await assert.rejects(tools.archive('keep', current.etag), /note_copy_verification_failed/);
+  assert.equal((await tools.read('keep')).content, 'KEEP_ORIGINAL'); assert.equal(deletes, 0);
+});
+
+test('a lost DELETE response is verified without repeating deletion', async t => {
+  const { store, sb } = await fixture(t), user = store.createUser('lost_user', 'fake');
+  await sb.provision(user); const tools = sb.tools(user.id);
+  await tools.write('remove', 'SYNTHETIC'); const current = await tools.read('remove');
+  const file = sb.file.bind(sb); let deletes = 0;
+  sb.file = async (id, page, options = {}) => {
+    const result = await file(id, page, options);
+    if (options.method === 'DELETE') { deletes++; throw new Error('lost_response'); }
+    return result;
+  };
+  assert.equal((await tools.remove('remove', current.etag, true)).deleted, true);
+  assert.equal(deletes, 1); await assert.rejects(tools.read('remove'), /note_not_found/);
+});
+
+test('in-flight note operations prevent overlapping moves or deletion of the user', async t => {
+  const { store, sb } = await fixture(t), user = store.createUser('busy_user', 'fake');
+  await sb.provision(user); const tools = sb.tools(user.id);
+  await tools.write('move', 'SYNTHETIC'); const current = await tools.read('move');
+  const file = sb.file.bind(sb); let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  sb.file = async (id, page, options = {}) => { if (!options.method) await gate; return file(id, page, options); };
+  const pending = tools.archive('move', current.etag);
+  assert.equal(sb.busy(user.id), true);
+  assert.throws(() => tools.archive('move', current.etag), /sb_busy/);
+  await assert.rejects(sb.archiveUser(user), /sb_busy/);
+  release(); await pending; assert.equal(sb.busy(user.id), false);
 });
 
 test('users can rename human note accounts without replacing agent tokens or retaining their password', async t => {

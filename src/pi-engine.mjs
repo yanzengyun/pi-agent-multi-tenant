@@ -79,11 +79,25 @@ export class PiEngine {
     });
     if (ctx.notes) customTools.push(
       { name: 'note_read', label: 'Note Read', description: 'Read a Markdown page from this user’s SilverBullet space. Never accepts another space URL.',
-        parameters: Type.Object({ page: Type.String({ maxLength: 120 }) }),
+        parameters: Type.Object({ page: Type.String({ maxLength: 300 }) }),
         async execute(_id, { page }) { return result(JSON.stringify(await ctx.notes.read(page, ctx.signal))); } },
       { name: 'note_write', label: 'Note Write', description: 'Write only when the user explicitly asks. For an existing page, first read it and provide its etag; without etag this is create-only.',
-        parameters: Type.Object({ page: Type.String({ maxLength: 120 }), content: Type.String({ maxLength: 30000 }), etag: Type.Optional(Type.String()) }),
+        parameters: Type.Object({ page: Type.String({ maxLength: 300 }), content: Type.String({ maxLength: 30000 }), etag: Type.Optional(Type.String()) }),
         async execute(_id, { page, content, etag }) { return result(JSON.stringify(await ctx.notes.write(page, content, etag, ctx.signal))); } },
+    );
+    if (ctx.notes?.archive) customTools.push(
+      { name: 'note_archive', label: '归档笔记',
+        description: '用户明确要求删除或清理一篇笔记时，默认将自己的笔记归档，可恢复。先note_read，提供原页的etag。返回归档路径，告知用户。不能操作其他空间、批量删除或承诺清理历史备份。',
+        parameters: Type.Object({ page: Type.String({ maxLength: 240 }), etag: Type.String(), reason: Type.Optional(Type.String({ maxLength: 200 })) }),
+        async execute(_id, { page, etag, reason }) { return result(JSON.stringify(await ctx.notes.archive(page, etag, reason, ctx.signal))); } },
+      { name: 'note_restore', label: '恢复归档笔记',
+        description: '用户要求恢复时，将note_archive返回的归档路径恢复到原路径。先note_read归档页并提供etag。原路径已有内容时拒绝，不覆盖。只操作自己的空间。',
+        parameters: Type.Object({ page: Type.String({ maxLength: 300 }), etag: Type.String() }),
+        async execute(_id, { page, etag }) { return result(JSON.stringify(await ctx.notes.restore(page, etag, ctx.signal))); } },
+      { name: 'note_delete', label: '永久删除单篇笔记',
+        description: '仅用户明确要求永久删除指定笔记时使用；普通“删除”使用note_archive。先note_read核对正文和etag，目标清楚且已明确要求永久删除即可执行，不重复索要确认。必须confirm=true；版本冲突时停止并重新核对。删除自己空间中的当前文件，历史备份可能保留，不支持其他空间或批量。',
+        parameters: Type.Object({ page: Type.String({ maxLength: 300 }), etag: Type.String(), confirm: Type.Boolean(), reason: Type.Optional(Type.String({ maxLength: 200 })) }),
+        async execute(_id, { page, etag, confirm, reason }) { return result(JSON.stringify(await ctx.notes.remove(page, etag, confirm, reason, ctx.signal))); } },
     );
     if (ctx.reminders) customTools.push(
       { name: 'reminder_create', label: 'Create Reminder', description: 'Only when the user asks: schedule a text reminder for this user. at must be a future ISO timestamp with timezone; daily repeats every 24h. WeChat needs the user to send at least one message first.',
