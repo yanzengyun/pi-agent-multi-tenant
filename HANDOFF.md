@@ -2,6 +2,15 @@
 
 更新时间：2026-10-15。
 
+## 笔记 rg 检索独立验收（2026-10-15，已通过，未上线）
+
+- 用户最初要求试 Silversearch、不要向量库；追问浏览器依赖后提出 grep/rg，最终改为 rg 独立验证。14 项真实检查通过，报告 test/note-search-live-verification.json、说明 docs/note-search-trial.md、重现脚本 scripts/verify-note-search.mjs。只增加试验文件，不改生产 src 或注册 note_search 工具，不能说微信助手已具备新检索功能。
+- 真实阿里云独立 2.12.0-slim 容器、临时 SQLite 与合成双用户，当前 UUID 受限 token 调官方 /.fs 列表、现有 note_read 读取本人正文，rg 仅接 stdin、固定字符串和参数数组，不给目录或 shell。103 页/124680 字节约484–615ms（含逐页HTTP），中文/英文/标题、字面量与选项形查询、更新与删除立即生效、跨用户列表/正文拒绝、结果限量/非法输入均通过；Runtime数0、无模型或微信调用，所有测试容器及临时应用DB已清理。
+- 额外 GNU time 合成490KB纯rg约8.19ms、峰值RSS6MiB，不含HTTP/Node；验收Node采样约105MiB，slim服务约15.53MiB且64MiB上限内无OOM。不能把纯rg数字说成整个后端成本，未做大型库/并发基准。
+- 本轮用户明确允许仅本次使用 root 运行独立试验；zengyuny 配现有密钥仍 publickey 拒绝，网络和 /tmp/stockclaw-known-hosts 中服务器指纹正常。不要把本轮 root 例外解释为永久修改工作区 SSH 规则。
+- 服务器保存位置 /home/admin/.local/share/pi-note-search-trial/{code,rg-result.json}。原 Pi PID2985保持，pi-multi-tenant/nginx/pi-sandbox active，/assistant/health 返回ok/mode pi；未重启生产或改真实笔记/ACL。源码/文档/报告收尾同步服务器。
+- Silversearch/中文插件资产仍在本机 /tmp/pi-note-search-trial；原未跑通 Runtime 验收脚本另存该目录 verify-runtime-search.unverified.mjs，不在公开项目中。官方完整镜像拉取和大包安装下载缓慢，依用户建议在本机并行分段下载约242MiB签名APK包后上传，测试容器离线安装成功Chromium152；随后用户选择rg，未完成Silversearch搜索/浏览器内存实测，不能声称其不兼容或实测占用过大。浏览器准备容器已删除，没有生产Runtime启用。服务器stage的apk/offline是未运行的安装缓存；没有执行全局Docker清理。
+
 ## 多用户单篇笔记归档、恢复与永久删除（2026-10-15）
 
 - 用户要求接着主助手部分代码开发多用户SB删除。已只读核对10-15聊天及主账号新增extensions/note-delete.ts：它写死personal，仅给主账号安装，未修改多用户后端；没有跟随其“装进租户沙箱”的错误架构判断。主SB3000与多用户SB32216是两套服务，多用户原有按UUID Space/受限token隔离有效。
