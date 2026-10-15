@@ -177,3 +177,28 @@ test('note lifecycle tools use the scoped transport and are absent from persona 
   assert.deepEqual(calls.map(item => [item.userId, item.name]), [[user.id, 'archive'], [user.id, 'restore'], [user.id, 'delete']]);
   assert.ok(calls.every(item => !JSON.stringify(item.args).includes('foreign')));
 });
+
+test('list/search tools use authenticated context, advertise limitations and stay out of persona drafts', async t => {
+  const calls = [];
+  const { store, queue } = fixture(t, async (tools, prompt, system) => {
+    if (prompt === 'draft') { assert.deepEqual(tools.map(tool => tool.name), ['persona_read']); return 'DRAFT'; }
+    assert.match(system, /note_list\/note_search/);
+    for (const [name, input] of [['note_list', { prefix: '生活', offset: 20 }], ['note_search', { query: '游泳' }]]) {
+      const tool = tools.find(item => item.name === name); assert.ok(tool);
+      assert.ok(!('userId' in tool.parameters) && !('url' in tool.parameters));
+      const value = JSON.parse((await tool.execute('test', input)).content[0].text);
+      assert.equal(value.owner, 'own');
+    }
+    return 'OK';
+  }, userId => ({ notes: {
+    list: async input => { calls.push({ userId, input }); return { owner: 'own' }; },
+    search: async input => { calls.push({ userId, input }); return { owner: 'own' }; },
+  } }));
+  const user = store.createUser('list_alice', 'fake'), conversation = store.createConversation(user.id, 'notes');
+  for (const [prompt, mode] of [['list and search', undefined], ['draft', 'persona_draft']]) {
+    const run = store.createRun(user.id, conversation.id, prompt, mode);
+    const settled = new Promise(resolve => queue.once('settled', resolve)); queue.kick(); await settled;
+    assert.equal(store.run(user.id, run.id).status, 'completed');
+  }
+  assert.equal(calls.length, 2); assert.ok(calls.every(call => call.userId === user.id));
+});

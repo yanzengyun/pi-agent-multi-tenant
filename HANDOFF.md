@@ -2,6 +2,14 @@
 
 更新时间：2026-10-15。
 
+## note_list / note_search 开发完成（2026-10-15，待服务器许可与上线）
+
+- 用户确认检索采用rg并要求补齐列表和搜索。已新增共享src/note-catalog.mjs，接入SilverBullet.tools与Pi SDK，系统提示补发现→检索→读原文/不完整范围说明。列表metadata-only、目录/最近修改排序/offset分页，默认20最多50；默认隐藏Library、CONFIG与归档，includeArchived显式开启。搜索按页返回URL/最多3段及原文行号，字面匹配忽略大小写，每次最多200页/2MB/200匹配行；跳过过大/并发删除页及返回上限均incomplete，权限/超时失败不当空结果。无浏览器/向量库，无持久搜索缓存。
+- inventory和read均固定当前UUID/prefix/folder/token，user停用及归属篡改拒绝；rg只接stdin，不执行shell或扫描宿主机。personadraft依旧只有persona_read。新增6项catalog单测、SDK接线和实际HTTP隔离单测，完整87项Node测试通过；本机独立slim真实模块16项验收通过，报告test/note-catalog-local-verification.json（本机，不是阿里云/模型验收）。原试验脚本已移除重复算法、改调正式模块；--model额外验证真实模型list与search→read，额度耗尽单独记状态。
+- 主账号适配在相邻alibaba_host/pi-agent/note-tools：固定sb --space personal fs ls/read，不读CLI凭据；复用同一catalog。2项模拟CLI适配测试通过，尚未加载到生产Pi。install.py备份并只在空闲/reload，检查notes-status、个人进程/设置/任务定义保持；源文件和部署说明均已准备。
+- deploy-live/update-live在停止服务前检查rg依赖；未改变SB镜像、ACL、数据库结构、用户页面或沙箱权限。新增docs/note-search.md并补README/部署说明。源码语法与diff检查通过。
+- 当前用户最新工作区SSH规则仍要求zengyuny。此用户现有密钥publickey拒绝，上轮root仅授权独立测试；本轮已异步询问是否允许root部署多用户（短暂重启）和主账号空闲加载，尚未收到回答，未用root连接/上传/部署。收到明确许可后：上传隔离stage新src和脚本→真实SB/模型验收→队列空闲时update-live→运行主账号install.py与只输出数量的CLI验证→健康/身份/主PID校验，再同步服务器Git与GitHub，更新本节。不要把当前本地通过说成已上线。
+
 ## 笔记 rg 检索独立验收（2026-10-15，已通过，未上线）
 
 - 用户最初要求试 Silversearch、不要向量库；追问浏览器依赖后提出 grep/rg，最终改为 rg 独立验证。14 项真实检查通过，报告 test/note-search-live-verification.json、说明 docs/note-search-trial.md、重现脚本 scripts/verify-note-search.mjs。只增加试验文件，不改生产 src 或注册 note_search 工具，不能说微信助手已具备新检索功能。

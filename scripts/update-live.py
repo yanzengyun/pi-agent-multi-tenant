@@ -13,9 +13,10 @@ deployment = ast.parse((root/'scripts/deploy-live.py').read_text())
 remote = next(node.value.value for node in deployment.body if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='remote' for t in node.targets))
 nginx = next(node.value.value for node in ast.parse(remote).body if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='text' for t in node.targets))
 prepare = r'''
-import subprocess,sqlite3,json,tarfile,time,hashlib
+import subprocess,sqlite3,json,tarfile,time,hashlib,shutil
 from pathlib import Path
 db=Path('/home/admin/.local/share/pi-agent-multi-tenant/data/assistant.sqlite')
+if not shutil.which('rg'):raise SystemExit('Install ripgrep before deploying note_search')
 c=sqlite3.connect('file:'+str(db)+'?mode=ro',uri=True)
 try:
  if c.execute("SELECT count(*) FROM runs WHERE status IN ('queued','running')").fetchone()[0]:raise SystemExit('Pending model runs; retry after they finish')

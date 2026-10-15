@@ -9,9 +9,10 @@ ssh = ['ssh', '-i', str(root.parent/'alibaba_host/config/pic.pem'), '-o', 'Ident
        '-o', 'UserKnownHostsFile=/tmp/stockclaw-known-hosts', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
        '-o', 'ServerAliveInterval=10', '-o', 'ServerAliveCountMax=2', 'root@123.56.157.198']
 preflight = r"""
-import subprocess,sqlite3
+import subprocess,sqlite3,shutil
 from pathlib import Path
 memory=dict(line.split(':',1) for line in Path('/proc/meminfo').read_text().splitlines())
+if not shutil.which('rg'):raise SystemExit('Install ripgrep before deploying note_search')
 if int(memory['MemAvailable'].split()[0]) < 600*1024: raise SystemExit('Insufficient available memory; do not deploy')
 database=Path('/home/admin/.local/share/pi-agent-multi-tenant/data/assistant.sqlite')
 if subprocess.run(['systemctl','is-active','--quiet','pi-multi-tenant']).returncode==0:

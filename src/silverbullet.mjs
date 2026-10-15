@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { notePath, NoteLifecycle } from './note-lifecycle.mjs';
+import { NoteCatalog } from './note-catalog.mjs';
 export { notePath } from './note-lifecycle.mjs';
 
 export class SilverBullet {
@@ -222,16 +223,37 @@ export class SilverBullet {
     if (text.length > 60000) throw new Error('note_too_large');
     return { page, content: text, etag: response.headers.get('etag') };
   }
+  async inventory(userId, signal) {
+    this.store.requireUsable(userId);
+    const item = this.store.integration(userId, 'silverbullet');
+    if (item?.status !== 'ready') throw new Error('sb_not_ready');
+    if (item.state.prefix !== '/users/' + userId || item.state.folder !== 'spaces/pi-tenants/' + userId) throw new Error('sb_space_ownership_mismatch');
+    const response = await fetch(this.base + item.state.prefix + '/.fs', { redirect: 'error',
+      headers: { Authorization: `Bearer ${item.state.token}`, 'X-Sync-Mode': 'true' },
+      signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(15000)]) });
+    if (!response.ok) throw new Error('sb_inventory_request_failed');
+    const chunks = []; let size = 0;
+    for await (const chunk of response.body) {
+      size += chunk.length;
+      if (size > 2_000_000) throw new Error('note_inventory_too_large');
+      chunks.push(chunk);
+    }
+    try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+    catch { throw new Error('invalid_note_inventory'); }
+  }
   tools(userId) {
     if (this.store.integration(userId, 'silverbullet')?.status !== 'ready') return null;
     const notes = new NoteLifecycle((page, options) => this.file(userId, page, options), this.store.directory, userId);
+    const catalog = new NoteCatalog({ inventory: signal => this.inventory(userId, signal),
+      read: (page, signal) => this.file(userId, page, { signal }), url: () => this.view(userId).url });
     const operation = work => {
       this.store.requireUsable(userId);
       if (this.busy(userId)) throw new Error('sb_busy');
       const pending = Promise.resolve().then(work).finally(() => this.noteOperations.delete(userId));
       this.noteOperations.set(userId, pending); return pending;
     };
-    return { read: (page, signal) => this.file(userId, page, { signal }),
+    return { list: (input, signal) => catalog.list(input, signal), search: (input, signal) => catalog.search(input, signal),
+      read: (page, signal) => this.file(userId, page, { signal }),
       write: (page, content, etag, signal) => this.file(userId, page, { method: 'PUT', content, etag, signal }),
       archive: (page, etag, reason, signal) => operation(() => notes.archive(page, etag, reason, signal)),
       restore: (page, etag, signal) => operation(() => notes.restore(page, etag, signal)),

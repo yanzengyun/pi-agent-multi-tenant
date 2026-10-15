@@ -4,7 +4,7 @@
 
 ## 1. 准备后端
 
-需要 Node.js ≥ 22.19；笔记服务需要 Docker，公网入口建议使用 Nginx 与 HTTPS。模型任务当前全局串行运行，从少量受邀用户开始。
+需要 Node.js ≥ 22.19；笔记服务需要 Docker，正文检索需要后端 PATH 中可执行的 `rg`（Ubuntu 包名 `ripgrep`）。公网入口建议使用 Nginx 与 HTTPS。模型任务当前全局串行运行，从少量受邀用户开始。列表/检索不需要浏览器或向量库，详见[笔记工具](note-search.md)。
 
 ```sh
 git clone https://github.com/yanzengyun/pi-agent-multi-tenant.git

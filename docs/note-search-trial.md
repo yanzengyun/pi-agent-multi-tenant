@@ -1,6 +1,6 @@
 # 笔记关键词检索试验
 
-2026-10-15 已在独立 SilverBullet 2.12.0-slim 实例通过真实 HTTP 验收。当前是验证脚本，尚未向生产助手注册 `note_search` 工具。
+2026-10-15 已在独立 SilverBullet 2.12.0-slim 实例通过真实 HTTP 验收。本文保留最初原型的试验结果；列表与检索现已接入代码，工具参数见[笔记列表与搜索](note-search.md)，实际部署状态见 [HANDOFF](../HANDOFF.md)。
 
 用户选择先使用 `rg`，不引入向量库或浏览器。原 Silversearch 插件约 116 KiB，中文分词 WASM 约 3.8 MiB；其官方 Runtime API 调用路线需要服务器浏览器。本轮完成了浏览器依赖离线下载准备，随后按用户方向切换到 `rg`，没有完成 Silversearch 实际搜索或内存测量。
 
@@ -38,4 +38,4 @@ docker pull ghcr.io/silverbulletmd/silverbullet:2.12.0-slim
 node scripts/verify-note-search.mjs /tmp/note-search-result.json
 ```
 
-脚本自行创建只绑定 loopback 的临时实例、两个虚构用户和笔记，使用临时 SQLite；结束删除本次容器与应用临时目录，仅保留指定报告。它不接受生产 URL，也不读取生产账户配置。报告中的额外 `rgStandaloneBenchmark` 为另行使用 GNU time 和合成文本采样的结果，不由上述脚本生成。
+脚本自行创建只绑定 loopback 的临时实例、两个虚构用户和笔记，使用临时 SQLite；结束删除本次容器与应用临时目录，仅保留指定报告。它不接受生产 URL，也不读取生产账户配置。脚本现验证正式 `NoteCatalog`，输出 `items` 和 `incomplete`，还包含分页和归档检查；上面的报告保留早期原型字段 `hits/limited`。报告中的额外 `rgStandaloneBenchmark` 为另行使用 GNU time 和合成文本采样的结果，不由上述脚本生成。

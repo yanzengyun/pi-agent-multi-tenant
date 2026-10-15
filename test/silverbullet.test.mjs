@@ -48,6 +48,14 @@ async function fixture(t) {
       if (account && req.method === 'DELETE') { delete state.users[account[1]]; return reply(200, { status: 'ok' }); }
       return reply(404, {});
     }
+    const listing = path.match(/^(\/users\/[^/]+)\/\.fs$/);
+    if (listing) {
+      const token = state.tokens.get((req.headers.authorization || '').slice(7));
+      const space = Object.values(state.spaces).find(space => space.binding.prefix === listing[1]);
+      if (!token || !space?.members[token.user]) return reply(403, {});
+      return reply(200, [...state.files].filter(([key]) => key.startsWith(listing[1] + '/'))
+        .map(([key, file], index) => ({ name: key.slice(listing[1].length + 1), size: Buffer.byteLength(file.content), lastModified: index + 1000 })));
+    }
     const note = path.match(/^(\/users\/[^/]+)\/\.fs\/(.+)$/);
     if (note) {
       const token = state.tokens.get((req.headers.authorization || '').slice(7));
@@ -97,6 +105,25 @@ test('provisioning creates separate human/agent accounts and private spaces with
   const prior = await sb.file(alice.id, '私有/测试');
   await sb.file(alice.id, '私有/测试', { method: 'PUT', content: 'updated', etag: prior.etag });
   await assert.rejects(sb.file(alice.id, '私有/测试', { method: 'PUT', content: 'stale', etag: prior.etag }), /note_conflict/);
+});
+
+test('list and rg search stay in the bound space and reject stale or forged ownership', async t => {
+  const { store, sb, baseUrl } = await fixture(t), alice = store.createUser('alice', 'fake'), bob = store.createUser('bob', 'fake');
+  await sb.provision(alice); await sb.provision(bob);
+  const a = sb.tools(alice.id), b = sb.tools(bob.id);
+  await a.write('生活/游泳', 'ALICE_周六游泳安排'); await b.write('生活/游泳', 'bobsecretvkn483');
+  assert.equal((await a.list()).items[0].page, '生活/游泳');
+  assert.equal((await a.search({ query: '游泳' })).items[0].excerpts.at(-1).text, 'ALICE_周六游泳安排');
+  assert.equal((await a.search({ query: 'bobsecretvkn483' })).items.length, 0);
+  assert.equal((await b.search({ query: 'bobsecretvkn483' })).items.length, 1);
+  const own = store.integration(alice.id, 'silverbullet'), foreign = store.integration(bob.id, 'silverbullet');
+  const response = await fetch(baseUrl + foreign.state.prefix + '/.fs', { headers: { Authorization: 'Bearer ' + own.state.token } });
+  assert.equal(response.status, 403);
+  store.setIntegration(alice.id, 'silverbullet', 'ready', { ...own.state, prefix: foreign.state.prefix });
+  await assert.rejects(a.list(), /sb_space_ownership_mismatch/);
+  store.setIntegration(alice.id, 'silverbullet', 'ready', own.state);
+  store.db.prepare('INSERT INTO user_deletions VALUES(?,?,?)').run(alice.id, 'pending', Date.now());
+  await assert.rejects(a.search({ query: '游泳' }), /user_unavailable/);
 });
 
 test('lost create response resumes provisioning without duplicate spaces or resetting passwords', async t => {

@@ -1,0 +1,66 @@
+{
+  "method": "scoped SB HTTP + rg stdin",
+  "productionTouched": false,
+  "browser": false,
+  "vectorDatabase": false,
+  "modelCalls": 0,
+  "checks": [
+    "chineseBody",
+    "chineseCompound",
+    "englishBody",
+    "pageTitle",
+    "literalRegex",
+    "optionLikeQuery",
+    "noMatch",
+    "metadataAndPagination",
+    "explicitArchiveSearch",
+    "immediateUpdate",
+    "immediateDelete",
+    "separateSearchResults",
+    "crossTenantListAndReadDenied",
+    "noBrowserRuntimes",
+    "boundedResults",
+    "invalidQueryRejected"
+  ],
+  "timingsMs": {
+    "chineseBody": 257,
+    "chineseCompound": 225,
+    "englishBody": 228,
+    "pageTitle": 233,
+    "literalRegex": 225,
+    "optionLikeQuery": 201,
+    "immediateUpdate": 198,
+    "immediateDelete": 219
+  },
+  "startedAt": "2026-10-15T09:07:50.020Z",
+  "image": "ghcr.io/silverbulletmd/silverbullet:2.12.0-slim",
+  "rgVersion": "ripgrep 15.2.0 (rev e89fff89ac)",
+  "imageId": "sha256:770e9e80f52b107c1fa5b6efc5b7609b006e38b2d2d67d7441d18f07d3100669",
+  "fixtureUserNotes": 102,
+  "scannedPages": 103,
+  "scannedBytes": 124680,
+  "memory": {
+    "silverbullet": {
+      "BlockIO": "0B / 209kB",
+      "CPUPerc": "0.01%",
+      "Container": "pi-search-verify-c04db7c5e75d",
+      "ID": "98410d47cd83",
+      "MemPerc": "6.13%",
+      "MemUsage": "3.926MiB / 64MiB",
+      "Name": "pi-search-verify-c04db7c5e75d",
+      "NetIO": "925kB / 1.12MB",
+      "PIDs": "13"
+    },
+    "verifier": {
+      "rss": 176320512,
+      "heapTotal": 92254208,
+      "heapUsed": 32255384,
+      "external": 12208223,
+      "arrayBuffers": 8270029
+    },
+    "events": "0"
+  },
+  "success": true,
+  "fixtureContainerRemoved": true,
+  "finishedAt": "2026-10-15T09:07:55.980Z"
+}

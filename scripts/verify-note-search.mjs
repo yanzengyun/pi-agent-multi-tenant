@@ -1,12 +1,14 @@
 // Real SB HTTP and rg, synthetic users in a disposable slim container only.
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Store } from '../src/store.mjs';
 import { SilverBullet } from '../src/silverbullet.mjs';
+import { PiEngine } from '../src/pi-engine.mjs';
+import { RunQueue } from '../src/queue.mjs';
 
 const output = resolve(process.argv[2] || '/tmp/pi-note-rg-search-result.json');
 const image = 'ghcr.io/silverbulletmd/silverbullet:2.12.0-slim';
@@ -15,41 +17,8 @@ const directory = mkdtempSync(join(tmpdir(), 'pi-search-fixture-')), store = new
 const report = { method: 'scoped SB HTTP + rg stdin', productionTouched: false, browser: false,
   vectorDatabase: false, modelCalls: 0, checks: [], timingsMs: {}, startedAt: new Date().toISOString(), image };
 const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8', timeout: 30000 }).trim();
-let sb, created = false;
+let sb, queue, created = false;
 
-// Transport is bound to one authenticated space; query is literal stdin search data.
-async function searchNotes(tools, list, query) {
-  if (typeof query !== 'string' || !query.trim() || query.length > 200 || /[\r\n\0]/.test(query)) throw new Error('invalid_search_query');
-  const candidates = (await list()).filter(f => f.name.endsWith('.md') && !f.name.startsWith('Library/') && f.name !== 'CONFIG.md');
-  const lines = [], locations = []; let bytes = 0, scannedPages = 0, limited = candidates.length > 200;
-  for (const file of candidates.slice(0, 200)) {
-    const page = file.name.slice(0, -3), note = await tools.read(page), size = Buffer.byteLength(note.content);
-    if (bytes + size > 2_000_000) { limited = true; break; }
-    bytes += size; scannedPages++; lines.push(page); locations.push({ page, line: 0 });
-    for (const [index, text] of note.content.split(/\r?\n/).entries()) { lines.push(text); locations.push({ page, line: index + 1 }); }
-  }
-  const stdout = await new Promise((resolve, reject) => {
-    const child = spawn('rg', ['--json', '--fixed-strings', '--ignore-case', '--text', '--max-count', '30', '--', query, '-'],
-      { cwd: directory, stdio: ['pipe', 'pipe', 'pipe'], shell: false });
-    const chunks = []; let size = 0, exceeded = false;
-    const timer = setTimeout(() => child.kill(), 5000);
-    child.stdout.on('data', chunk => { size += chunk.length; if (size > 4_000_000) { exceeded = true; child.kill(); } else chunks.push(chunk); });
-    child.stderr.resume(); child.stdin.on('error', () => {}); child.on('error', reject);
-    child.on('close', (code, signal) => {
-      clearTimeout(timer);
-      if (exceeded || signal || ![0, 1].includes(code)) reject(new Error('rg_search_failed'));
-      else resolve(Buffer.concat(chunks).toString('utf8'));
-    });
-    child.stdin.end(lines.join('\n') + '\n');
-  });
-  const matches = stdout.trim().split('\n').filter(Boolean).map(line => JSON.parse(line)).filter(row => row.type === 'match');
-  const hits = matches.map(({ data }) => {
-    const location = locations[data.line_number - 1], text = data.lines.text.trimEnd();
-    const offset = Buffer.from(text).subarray(0, data.submatches[0].start).toString('utf8').length;
-    return { ...location, excerpt: text.slice(Math.max(0, offset - 100), offset + 300) };
-  });
-  return { hits: hits.slice(0, 20), scannedPages, scannedBytes: bytes, limited: limited || matches.length >= 20 };
-}
 
 try {
   report.rgVersion = execFileSync('rg', ['--version'], { encoding: 'utf8' }).split('\n')[0];
@@ -75,8 +44,7 @@ try {
   const request = (state, path, options = {}) => fetch(baseUrl + state.prefix + path, {
     ...options, headers: { Authorization: 'Bearer ' + state.token, ...options.headers }, signal: AbortSignal.timeout(15000) });
   const tools = people.map(person => sb.tools(person.id));
-  const list = state => async () => { const response = await request(state, '/.fs'); assert.equal(response.status, 200); return response.json(); };
-  const search = (index, query) => searchNotes(tools[index], list(states[index]), query);
+  const search = (index, query) => tools[index].search({ query });
   const content = '# 周末安排\n这周六下午去游泳，记得带泳镜和毛巾。\nDeployment healthcheck passed.\noldopalqrx\n字面量 .* 和 --files 也是笔记内容。\n';
   await tools[0].write('验收/运动安排', content);
   await tools[1].write('验收/运动安排', '# 合成私有笔记\nbobsecretvkn483\n');
@@ -85,32 +53,63 @@ try {
   const measure = async (key, fn) => { const start = performance.now(), result = await fn(); report.timingsMs[key] = Math.round(performance.now() - start); return result; };
   for (const [label, query] of [['chineseBody', '游泳'], ['chineseCompound', '泳镜'], ['englishBody', 'HEALTHCHECK'], ['pageTitle', '运动安排'], ['literalRegex', '.*'], ['optionLikeQuery', '--files']]) {
     const result = await measure(label, () => search(0, query));
-    assert.ok(result.hits.some(hit => hit.page === '验收/运动安排'), label + ' must match');
-    assert.equal(result.limited, false); report.scannedPages = result.scannedPages; report.scannedBytes = result.scannedBytes; report.checks.push(label);
+    assert.ok(result.items.some(hit => hit.page === '验收/运动安排'), label + ' must match');
+    assert.equal(result.incomplete, false); report.scannedPages = result.scannedPages; report.scannedBytes = result.scannedBytes; report.checks.push(label);
   }
-  assert.equal((await search(0, 'quasarzznvxtp731')).hits.length, 0); report.checks.push('noMatch');
+  assert.equal((await search(0, 'quasarzznvxtp731')).items.length, 0); report.checks.push('noMatch');
+  const first = await tools[0].list({ prefix: '验收', limit: 1 });
+  const second = await tools[0].list({ prefix: '验收', limit: 1, offset: first.nextOffset });
+  assert.equal(first.total, 101); assert.notEqual(first.items[0].page, second.items[0].page);
+  assert.ok(first.items.every(item => !('content' in item) && item.url)); report.checks.push('metadataAndPagination');
+  await tools[0].write('归档/验收旧笔记', 'oldarchivekqr11');
+  assert.equal((await search(0, 'oldarchivekqr11')).items.length, 0);
+  assert.equal((await tools[0].search({ query: 'oldarchivekqr11', includeArchived: true })).items.length, 1);
+  report.checks.push('explicitArchiveSearch');
+  if (process.argv.includes('--model')) {
+    const engine = new PiEngine({ sdkModule: process.env.PI_SDK_MODULE || resolve('sdk-runtime/node_modules/@earendil-works/pi-coding-agent/dist/index.js'),
+      modelsPath: process.env.PI_MODELS_PATH || resolve('models.json'), provider: 'minimax-cn', model: 'MiniMax-M3.1-Flash-Preview', thinkingLevel: 'medium', apiKey: process.env.MINIMAX_CN_API_KEY });
+    await engine.initialize();
+    queue = new RunQueue(store, engine, { contextFactory: userId => ({ notes: sb.tools(userId) }) });
+    const conversation = store.createConversation(people[0].id, '合成笔记检索验收');
+    for (const [prompt, expected] of [
+      ['请用笔记列表工具列出我验收目录的前3篇笔记，再告诉我这个目录总共有几篇，只需列标题。', ['note_list']],
+      ['请搜索我笔记中关于游泳的记录，读取找到的原文，告诉我安排在周几、需要带什么，并提供笔记链接。', ['note_search', 'note_read']],
+    ]) {
+      const run = store.createRun(people[0].id, conversation.id, prompt);
+      const settled = new Promise(resolve => queue.once('settled', resolve)); queue.kick(); await settled; report.modelCalls++;
+      const finished = store.run(people[0].id, run.id);
+      if (finished.error === 'model_quota_exhausted') { report.modelVerification = 'quota_exhausted'; break; }
+      assert.equal(finished.status, 'completed', finished.error);
+      const events = store.traces(people[0].id, run.id);
+      const called = events.filter(e => e.kind === 'sdk_event' && e.payload.type === 'tool_execution_start').map(e => e.payload.toolName);
+      for (const name of expected) assert.ok(called.includes(name), 'Model did not call ' + name);
+      if (expected.includes('note_read')) { assert.match(finished.response, /周六|星期六/); assert.ok(called.indexOf('note_search') < called.indexOf('note_read')); }
+      report.checks.push('actualModel:' + expected.join(',')); report.modelVerification = 'passed';
+    }
+  }
   const old = await tools[0].read('验收/运动安排');
   await tools[0].write('验收/运动安排', content.replace('oldopalqrx', 'newamberjtz'), old.etag);
-  assert.ok((await measure('immediateUpdate', () => search(0, 'newamberjtz'))).hits.length);
-  assert.equal((await search(0, 'oldopalqrx')).hits.length, 0); report.checks.push('immediateUpdate');
+  assert.ok((await measure('immediateUpdate', () => search(0, 'newamberjtz'))).items.length);
+  assert.equal((await search(0, 'oldopalqrx')).items.length, 0); report.checks.push('immediateUpdate');
   const updated = await tools[0].read('验收/运动安排'); await tools[0].remove('验收/运动安排', updated.etag, true, 'synthetic_search_verification');
-  assert.equal((await measure('immediateDelete', () => search(0, 'newamberjtz'))).hits.length, 0); report.checks.push('immediateDelete');
-  assert.equal((await search(0, 'bobsecretvkn483')).hits.length, 0); assert.ok((await search(1, 'bobsecretvkn483')).hits.length); report.checks.push('separateSearchResults');
+  assert.equal((await measure('immediateDelete', () => search(0, 'newamberjtz'))).items.length, 0); report.checks.push('immediateDelete');
+  assert.equal((await search(0, 'bobsecretvkn483')).items.length, 0); assert.ok((await search(1, 'bobsecretvkn483')).items.length); report.checks.push('separateSearchResults');
   for (const path of ['/.fs', '/.fs/' + encodeURIComponent('验收') + '/' + encodeURIComponent('运动安排.md')]) {
     const response = await fetch(baseUrl + states[1].prefix + path, { headers: { Authorization: 'Bearer ' + states[0].token } }); assert.ok([401, 403].includes(response.status));
   }
   report.checks.push('crossTenantListAndReadDenied');
   assert.equal((await sb.admin('runtimes')).length, 0); report.checks.push('noBrowserRuntimes');
-  const bounded = await search(0, '合成笔记'); assert.equal(bounded.hits.length, 20); assert.equal(bounded.limited, true); report.checks.push('boundedResults');
-  await assert.rejects(search(0, '\n'), /invalid_search_query/); report.checks.push('invalidQueryRejected');
+  const bounded = await search(0, '合成笔记'); assert.ok(bounded.items.length > 0 && bounded.items.length <= 20); assert.equal(bounded.incomplete, true); report.checks.push('boundedResults');
+  await assert.rejects(search(0, '\n'), /invalid_note_query/); report.checks.push('invalidQueryRejected');
   report.memory = { silverbullet: JSON.parse(docker('stats', '--no-stream', '--format', '{{json .}}', container)),
-    verifier: process.memoryUsage(), events: docker('exec', container, 'cat', '/sys/fs/cgroup/memory.events') };
+    verifier: process.memoryUsage(), events: docker('exec', container, 'sh', '-c',
+      'if [ -r /sys/fs/cgroup/memory.events ]; then cat /sys/fs/cgroup/memory.events; elif [ -r /sys/fs/cgroup/memory/memory.failcnt ]; then cat /sys/fs/cgroup/memory/memory.failcnt; else echo unavailable; fi') };
   report.success = true;
 } catch (error) {
   report.success = false; report.failure = error.message; process.exitCode = 1;
   if (created) report.fixtureLogs = docker('logs', '--tail', '30', container);
 } finally {
-  await sb?.close(); store.close();
+  await queue?.close(); await sb?.close(); store.close();
   if (created) { docker('rm', '-f', container); report.fixtureContainerRemoved = true; }
   rmSync(directory, { recursive: true, force: true }); report.finishedAt = new Date().toISOString();
   writeFileSync(output, JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
