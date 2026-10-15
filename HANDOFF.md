@@ -2,13 +2,14 @@
 
 更新时间：2026-10-15。
 
-## note_list / note_search 开发完成（2026-10-15，待服务器许可与上线）
+## note_list / note_search（2026-10-15，主账号与多用户均已上线）
 
-- 用户确认检索采用rg并要求补齐列表和搜索。已新增共享src/note-catalog.mjs，接入SilverBullet.tools与Pi SDK，系统提示补发现→检索→读原文/不完整范围说明。列表metadata-only、目录/最近修改排序/offset分页，默认20最多50；默认隐藏Library、CONFIG与归档，includeArchived显式开启。搜索按页返回URL/最多3段及原文行号，字面匹配忽略大小写，每次最多200页/2MB/200匹配行；跳过过大/并发删除页及返回上限均incomplete，权限/超时失败不当空结果。无浏览器/向量库，无持久搜索缓存。
-- inventory和read均固定当前UUID/prefix/folder/token，user停用及归属篡改拒绝；rg只接stdin，不执行shell或扫描宿主机。personadraft依旧只有persona_read。新增6项catalog单测、SDK接线和实际HTTP隔离单测，完整87项Node测试通过；本机独立slim真实模块16项验收通过，报告test/note-catalog-local-verification.json（本机，不是阿里云/模型验收）。原试验脚本已移除重复算法、改调正式模块；--model额外验证真实模型list与search→read，额度耗尽单独记状态。
-- 主账号适配在相邻alibaba_host/pi-agent/note-tools：固定sb --space personal fs ls/read，不读CLI凭据；复用同一catalog。2项模拟CLI适配测试通过，尚未加载到生产Pi。install.py备份并只在空闲/reload，检查notes-status、个人进程/设置/任务定义保持；源文件和部署说明均已准备。
-- deploy-live/update-live在停止服务前检查rg依赖；未改变SB镜像、ACL、数据库结构、用户页面或沙箱权限。新增docs/note-search.md并补README/部署说明。源码语法与diff检查通过。
-- 当前用户最新工作区SSH规则仍要求zengyuny。此用户现有密钥publickey拒绝，上轮root仅授权独立测试；本轮已异步询问是否允许root部署多用户（短暂重启）和主账号空闲加载，尚未收到回答，未用root连接/上传/部署。收到明确许可后：上传隔离stage新src和脚本→真实SB/模型验收→队列空闲时update-live→运行主账号install.py与只输出数量的CLI验证→健康/身份/主PID校验，再同步服务器Git与GitHub，更新本节。不要把当前本地通过说成已上线。
+- 用户确认检索采用rg并要求补齐列表和搜索。共享src/note-catalog.mjs接入SilverBullet.tools与Pi SDK，系统提示补发现→检索→读原文及不完整范围说明。列表只返回元数据，支持目录/最近修改/offset分页，默认20最多50；默认隐藏Library、CONFIG与归档，includeArchived显式开启。搜索按页返回URL/最多3段及原文行号，字面匹配忽略大小写，每次最多200页/2MB/200匹配行；跳过过大/并发删除页及返回上限均incomplete，权限/超时失败不当空结果。无需浏览器/向量库，无持久搜索缓存。
+- inventory/read固定当前UUID/prefix/folder/token，停用及归属篡改拒绝；rg仅接stdin，不执行shell或扫描宿主机。人物设定草稿仍只有persona_read。完整87项Node测试本机与阿里云均通过；独立slim真实HTTP验收18项通过，含真实MiniMax两轮note_list与note_search→note_read、更新/删除立即生效、跨用户列表/正文拒绝。报告test/note-catalog-live-verification.json，使用合成双用户，无真实笔记/微信，临时容器和库已清理。103页/124680字节搜索约0.9–1.9秒，SB约11.73MiB/64MiB、无OOM；含SDK验收Node采样约126MiB，非大型库/并发基准。
+- 多用户已update-live部署，备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261015-173933。上线源码与验收stage相符，/assistant/health为ok/mode pi，用户/微信绑定/自定义人设摘要保持。pi-multi-tenant/nginx/pi-sandbox/pi-wechat-watchdog均active，个人Pi PID2985未变。
+- 主账号扩展在相邻alibaba_host/pi-agent/note-tools，复用catalog，固定sb --space personal官方fs ls/read，不读取CLI凭据。空闲/reload后notes-status registered/active均true，微信已连接，模型设置/定时任务定义/PID保持；备份/home/admin/.local/share/pi-note-tools/backup-20261015-173956。真实CLI验证列出86篇、随机无命中查询扫描86篇且incomplete=false，合计2346ms；仅输出数量/布尔，不记录私人标题/正文，不发送微信。
+- deploy-live/update-live停止服务前检查rg依赖。未改SB镜像、ACL、数据库结构、用户页面或沙箱权限。工具参数与部署见docs/note-search.md。源码、报告和交接同步GitHub及服务器源码副本；服务器运行目录独立于Git副本。
+- 用户本轮明确澄清：工作区zengyuny SSH要求针对工作服务器，允许root连接这台阿里云。此主机后续维护可用root，无需重复询问；不扩展到其他工作服务器。下文旧root单次例外记录仅为当时历史。
 
 ## 笔记 rg 检索独立验收（2026-10-15，已通过，未上线）
 

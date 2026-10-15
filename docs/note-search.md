@@ -43,4 +43,6 @@ node scripts/verify-note-search.mjs /tmp/note-catalog-result.json
 
 第二条使用独立临时 slim 容器、合成双用户和笔记，验证真实生产模块的分页、关键词匹配、归档、更新/删除刷新与隔离，结束清理临时容器和应用库。可加 `--model`，复用已配置 SDK、模型配置及环境中的 Key，额外验证真实模型调用列表及搜索→读取；明确额度耗尽时单独记录状态，不将其说成模型验证通过。测试不发送微信消息或访问真实用户笔记。
 
+2026-10-15阿里云真实HTTP与模型18项验收通过，见[正式模块报告](../test/note-catalog-live-verification.json)：模型实际调用列表及搜索→读取，测试Space彼此隔离。
+
 早期独立试验及资源数据见 [试验记录](note-search-trial.md)。主账号使用相同搜索模块与固定 `sb --space personal` CLI 连接，个人扩展部署在相邻私有配置项目，不读取或复制 CLI 凭据。
