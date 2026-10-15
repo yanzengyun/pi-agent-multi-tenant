@@ -27,7 +27,8 @@ export class ILinkClient {
     return data;
   }
   qr(signal) { return this.request(DEFAULT_BASE, '/ilink/bot/get_bot_qrcode?bot_type=3', { signal }); }
-  status(token, base, signal) { return this.request(base, '/ilink/bot/get_qrcode_status?qrcode=' + encodeURIComponent(token), { signal, headers: { 'iLink-App-ClientVersion': '1' } }); }
+  // The QR endpoint normally holds an unchanged status for about 30 seconds.
+  status(token, base, signal) { return this.request(base, '/ilink/bot/get_qrcode_status?qrcode=' + encodeURIComponent(token), { signal, timeout: 40000, headers: { 'iLink-App-ClientVersion': '1' } }); }
   updates(binding, signal) {
     return this.request(binding.base_url, '/ilink/bot/getupdates', { token: binding.token, signal, timeout: 55000, body: { get_updates_buf: binding.cursor } });
   }

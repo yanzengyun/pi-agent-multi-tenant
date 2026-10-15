@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Store } from '../src/store.mjs';
-import { WechatManager, wechatBase } from '../src/wechat.mjs';
+import { ILinkClient, WechatManager, wechatBase } from '../src/wechat.mjs';
 import { RunQueue } from '../src/queue.mjs';
 import { MockEngine } from '../src/engine.mjs';
 
@@ -29,6 +29,24 @@ function confirm(client, store, user, login, suffix) {
   client.responses.set(store.loginAttempt(user.id, login.id).qr_token, { status: 'confirmed', bot_token: 'fake-private-token-' + suffix,
     ilink_bot_id: 'fake-bot-' + suffix, ilink_user_id: 'fake-peer-' + suffix, baseurl: 'https://ilinkai.weixin.qq.com' });
 }
+
+test('QR status accepts a normal 30-second long poll and still honours cancellation', async t => {
+  // Compress the real 30-second response and request deadlines by 100 for this regression.
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  t.mock.method(AbortSignal, 'timeout', ms => timeout(ms / 100));
+  const client = new ILinkClient({ fetcher: async (_url, { signal }) => {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, 300);
+      signal.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+    });
+    return Response.json({ ret: 0, status: 'wait' });
+  } });
+  assert.equal((await client.status('fake-qr', 'https://ilinkai.weixin.qq.com')).status, 'wait');
+  const controller = new AbortController();
+  const waiting = client.status('fake-qr', 'https://ilinkai.weixin.qq.com', controller.signal);
+  controller.abort();
+  await assert.rejects(waiting, { name: 'AbortError' });
+});
 
 test('quota failure sends a specific fixed reply only to the affected user and once per request', async t => {
   const { store, alice, bob, manager, client } = fixture(t);
