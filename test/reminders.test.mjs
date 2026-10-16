@@ -62,3 +62,15 @@ test('scheduled delivery uses the latest own context and never the other user co
   await manager.flush(); await manager.close();
   assert.deepEqual(sent, [{ peer: 'peer-a', context: 'context-a-latest', text: 'ALICE_ONLY' }]);
 });
+
+
+test('scheduled reminders do not reset the previous user-message clock', t => {
+  const { store, alice, reminders } = fixture(t), now = Date.now();
+  const binding = connect(store, alice, 'clock');
+  const first = store.pending()[0];
+  store.db.prepare('UPDATE runs SET created_at=? WHERE id=?').run(now - 900000, first.id);
+  reminders.create(alice.id, { text: 'CLOCK_REMINDER', at: new Date(now + 1000).toISOString() }, now);
+  reminders.tick(now + 2000);
+  const current = store.createRun(alice.id, binding.conversation_id, 'after reminder');
+  assert.equal(store.previousUserRunReceivedAt(alice.id, binding.conversation_id, current.id), now - 900000);
+});

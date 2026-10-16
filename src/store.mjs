@@ -233,6 +233,7 @@ export class Store {
       WHERE r.user_id=? AND r.conversation_id=?
         AND r.rowid < (SELECT rowid FROM runs WHERE id=? AND user_id=?)
         AND coalesce(mode.mode,'') != 'persona_draft'
+        AND NOT EXISTS (SELECT 1 FROM wechat_inbox inbox WHERE inbox.run_id=r.id AND inbox.message_id LIKE 'reminder:%')
       ORDER BY r.rowid DESC LIMIT 1`).get(userId, conversationId, runId, userId)?.created_at ?? null;
   }
   runMode(id) { return this.db.prepare('SELECT mode FROM run_modes WHERE run_id=?').get(id)?.mode; }
