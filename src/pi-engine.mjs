@@ -1,3 +1,4 @@
+import { requestCaptureExtensions } from './request-capture.mjs';
 import { mkdirSync, realpathSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -31,7 +32,7 @@ export class PiEngine {
       ? SessionManager.open(this.checkedFile(ctx.conversation.sdk_file, sessions), sessions, workspace)
       : SessionManager.create(workspace, sessions);
     const resourceLoader = {
-      getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+      getExtensions: () => ({ extensions: requestCaptureExtensions(ctx, this.config.apiKey), errors: [], runtime: createExtensionRuntime() }),
       getSkills: () => ({ skills: [], diagnostics: [] }),
       getPrompts: () => ({ prompts: [], diagnostics: [] }),
       getThemes: () => ({ themes: [], diagnostics: [] }),

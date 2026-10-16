@@ -2,6 +2,12 @@
 
 更新时间：2026-10-16。
 
+## 多用户按需最终请求捕获（2026-10-17）
+
+- 用户要求捕获多助手三次；默认目标为刚才讨论的小写lucy。新增src/request-capture.mjs及流式context-capture.mjs，通过resourceLoader的临时before_provider_request扩展保存每轮首个最终payload；工具后续调用不消费计数。默认关闭，无公共开启接口，不恢复旧trace服务。
+- 操作者SSH在data/context-capture/写arming.json（目标userId、毫秒expiresAt）和status.json（armed=true、remaining=3、captures=[]）；同一全局队列串行，只目标用户、非人物草稿、有效期内且未满3次才接入钩子。三次后自动关闭，过期不再捕获。每份48MiB未压缩上限、流式gzip level1；private0700/0600，已知模型Key/凭据字段遮盖，无认证头。真实文件禁止Git。
+- 104项测试通过。服务器隔离真实SDK+loopback模拟HTTP接口3次验证：保存payload逐字结构等于HTTP端收到正文、短间隔不重复时间前缀、历史/系统稳定、3次后自动关闭；不使用真实用户数据/Key，不发微信合成消息。
+
 ## 消息间隔时间前缀上线（2026-10-17 00:25）
 
 - 首次、同一用户同一会话接收时间间隔严格超过10分钟或跨北京时间日期时，仅在本轮SDK user消息前添加北京时间/星期/时区；排队至少1分钟时同时给接收和处理时间。应用messages/runs.prompt仍是用户原文，SDK transcript保存实际前缀，历史不改写。
