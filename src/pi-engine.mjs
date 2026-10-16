@@ -2,6 +2,7 @@ import { mkdirSync, realpathSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
+import { withTimeContext } from './time-context.mjs';
 import { systemPrompt } from './engine.mjs';
 import { isQuotaFailure } from './model-errors.mjs';
 import { memorySnapshot } from './memory.mjs';
@@ -171,7 +172,7 @@ export class PiEngine {
     ctx.signal.addEventListener('abort', abort, { once: true });
     try {
       ctx.signal.throwIfAborted();
-      await session.prompt(prompt);
+      await session.prompt(ctx.timeContext && !ctx.personaDraft ? withTimeContext(prompt, ctx.timeContext) : prompt);
       const assistant = session.messages.findLast(message => message.role === 'assistant');
       if (assistant?.errorMessage || assistant?.stopReason === 'error' || assistant?.stopReason === 'aborted') {
         const failure = new Error('Model failed');

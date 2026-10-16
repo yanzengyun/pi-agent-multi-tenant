@@ -227,6 +227,14 @@ export class Store {
     if (mode) this.db.prepare('INSERT INTO run_modes VALUES (?,?)').run(id, mode);
     return this.run(userId, id);
   }
+  previousUserRunReceivedAt(userId, conversationId, runId) {
+    return this.db.prepare(`SELECT r.created_at FROM runs r
+      LEFT JOIN run_modes mode ON mode.run_id=r.id
+      WHERE r.user_id=? AND r.conversation_id=?
+        AND r.rowid < (SELECT rowid FROM runs WHERE id=? AND user_id=?)
+        AND coalesce(mode.mode,'') != 'persona_draft'
+      ORDER BY r.rowid DESC LIMIT 1`).get(userId, conversationId, runId, userId)?.created_at ?? null;
+  }
   runMode(id) { return this.db.prepare('SELECT mode FROM run_modes WHERE run_id=?').get(id)?.mode; }
   run(userId, id) { return this.db.prepare('SELECT * FROM runs WHERE id=? AND user_id=?').get(id, userId); }
   recentRuns(userId) {

@@ -2,6 +2,13 @@
 
 更新时间：2026-10-16。
 
+## 消息间隔时间前缀上线（2026-10-17 00:25）
+
+- 首次、同一用户同一会话接收时间间隔严格超过10分钟或跨北京时间日期时，仅在本轮SDK user消息前添加北京时间/星期/时区；排队至少1分钟时同时给接收和处理时间。应用messages/runs.prompt仍是用户原文，SDK transcript保存实际前缀，历史不改写。
+- 删除engine.mjs原每轮new Date().toISOString系统时钟，换成固定TIME_CONTEXT_RULE；统一基础规则不覆盖每个用户可编辑人物设定。以run.created_at计时，Store.previousUserRunReceivedAt按用户/会话/rowid限定，排除人物草稿，不用助手回复或工具时间。人物草稿不加前缀。
+- 102项测试通过，新增跨天、10分钟边界、排队、图片保留、用户隔离、原文保存及SDK入口测试。真实Pi SDK+本地模拟Anthropic接口两轮请求验证前缀、短间隔不重复、历史逐字不变及系统提示稳定，不用真实聊天/Key，不向微信发测试。
+- 已update-live上线，备份 /home/admin/.local/share/pi-agent-multi-tenant/backups/20261017-002521，用户/绑定/自定义人物/记忆摘要保持，主Pi PID不变。多用户进程短暂重启；真实用户后续消息尚待端到端验收。
+
 ## 沙箱缩容至 6（2026-10-16）
 
 - 用户要求缩容；生产 runner 与安装脚本默认池均已改 6，README/deployment 同步。生产当前 allocated4/capacity6；原 owners 全部在0..3，内容前后逐字不变。

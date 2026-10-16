@@ -38,6 +38,7 @@ export class RunQueue extends EventEmitter {
       };
       const context = {
         personaDraft,
+        timeContext: { receivedAt: run.created_at, previousReceivedAt: this.store.previousUserRunReceivedAt(run.user_id, run.conversation_id, run.id) },
         ...(personaDraft ? {} : this.contextFactory(run.user_id, run)),
         userId: run.user_id, conversation: this.store.conversation(run.user_id, run.conversation_id),
         directory: this.store.directory, signal: controller.signal, emit,

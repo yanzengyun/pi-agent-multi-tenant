@@ -243,3 +243,36 @@ test('list/search tools use authenticated context, advertise limitations and sta
   }
   assert.equal(calls.length, 2); assert.ok(calls.every(call => call.userId === user.id));
 });
+
+test('time prefix reaches SDK while business history stays raw, is scoped and skips persona drafts', async t => {
+  const received = [];
+  const { store, queue } = fixture(t, async (_tools, prompt, system) => {
+    received.push(prompt);
+    assert.doesNotMatch(system, /当前时间：\d{4}-/);
+    assert.match(system, /程序附加的时间信息/);
+    return 'ok';
+  });
+  const alice = store.createUser('clock_alice', 'fake'), bob = store.createUser('clock_bob', 'fake');
+  const a = store.createConversation(alice.id, 'clock'), b = store.createConversation(bob.id, 'clock');
+  for (const [user, conversation, prompt, age] of [
+    [alice, a, 'first', 0], [alice, a, 'short', 0],
+    [bob, b, 'other user', 0], [alice, a, 'long gap', 700000],
+  ]) {
+    if (age) store.db.prepare('UPDATE runs SET created_at=created_at-? WHERE user_id=? AND conversation_id=?').run(age, user.id, conversation.id);
+    const run = store.createRun(user.id, conversation.id, prompt);
+    const settled = new Promise(resolve => queue.once('settled', resolve)); queue.kick(); await settled;
+    assert.equal(store.run(user.id, run.id).status, 'completed');
+    assert.equal(store.messages(user.id, conversation.id).filter(m => m.role === 'user').at(-1).content, prompt);
+  }
+  assert.match(received[0], /^\[程序附加/);
+  assert.equal(received[1], 'short');
+  assert.match(received[2], /^\[程序附加/);
+  assert.match(received[3], /^\[程序附加/);
+  await queue.close();
+  const draft = store.createRun(alice.id, a.id, 'draft', 'persona_draft');
+  const after = store.createRun(alice.id, a.id, 'after draft');
+  const previous = store.db.prepare("SELECT created_at FROM runs WHERE prompt='long gap'").get().created_at;
+  store.db.prepare('UPDATE runs SET created_at=created_at+1000 WHERE id=?').run(draft.id);
+  assert.equal(store.previousUserRunReceivedAt(alice.id, a.id, after.id), previous);
+  assert.equal(store.previousUserRunReceivedAt(bob.id, a.id, after.id), null);
+});
