@@ -297,7 +297,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     os.umask(0o077)
-    pool = Pool('/var/lib/pi-sandbox/slots', int(os.environ.get('PI_SANDBOX_POOL_SIZE', '8')))
+    pool = Pool('/var/lib/pi-sandbox/slots', int(os.environ.get('PI_SANDBOX_POOL_SIZE', '6')))
     runner = Runner(pool)
     socket = Path('/run/pi-sandbox/runner.sock')
     socket.unlink(missing_ok=True)

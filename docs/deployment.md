@@ -181,7 +181,7 @@ sudo journalctl -u pi-assistant --no-pager -n 30
 
 - 后端与执行器使用不同 Linux 身份，后端仅获得 socket 客户端组权限。
 - 用户第一次调用 `cmd` 时绑定独立持久工作区，沙箱中路径为 `/work`。
-- 默认池有 8 个磁盘槽位，各约 100MiB 可用；绑定用户后保留，删除用户才清空并释放。
+- 默认池有 6 个磁盘槽位，各约 100MiB 可用；绑定用户后保留，删除用户才清空并释放。
 - 每条命令创建新隔离环境，最多 30 秒、192MiB 内存、64 个进程，直接联网关闭。
 
 执行器安装还需准备独立文件系统、cgroup delegation 和系统策略。现有 `scripts/deploy-sandbox.py`、`scripts/enable-sandbox.py` 是既有环境的安装记录，使用前逐项调整目标地址、用户和路径，不直接作为通用安装器执行。参见 [沙箱设计](sandbox-research.md) 与 `sandbox/runner.py`。

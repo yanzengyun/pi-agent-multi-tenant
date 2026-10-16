@@ -2,6 +2,13 @@
 
 更新时间：2026-10-16。
 
+## 沙箱缩容至 6（2026-10-16）
+
+- 用户要求缩容；生产 runner 与安装脚本默认池均已改 6，README/deployment 同步。生产当前 allocated4/capacity6；原 owners 全部在0..3，内容前后逐字不变。
+- 仅短暂重启 pi-sandbox；没有重启主 Pi（PID1883不变）或多用户后端，后端 health=ok。6/7 空目录确认后解除挂载并删除对应 fstab 条目；旧磁盘镜像保留，没有删除用户数据。
+- 私有回滚文件位于 /root/pi-sandbox-backups/shrink-six-20261016-203645，含 unit/fstab/runner/owners。回滚需恢复旧配置、重新挂载6/7并重启沙箱，勿覆盖之后变化的 owners。
+- 6项 Pool 测试通过（新增缩容保留用户与超界 owner 拒绝）；生产用随机合成 UUID 验证命令执行、保存文件和复用成功，最终 release，真实 owners 不变。池为持久磁盘名额，不代表常驻6个容器，也不限制注册人数。
+
 ## 按用户要求切回MiniMax（2026-10-16 01:30，当前模型状态）
 
 - 用户要求先切回MiniMax。隔离真实SDK探测仍返回model_quota_exhausted，已明确告知额度尚未恢复，仍按明确要求切换主助手和多用户为minimax-cn/MiniMax-M3.1-Flash-Preview，medium。没有自动恢复探测或自动故障转移；DeepSeek配置/Key保留，但当前不自动兜底。

@@ -27,7 +27,7 @@ Path('/opt/pi-sandbox/disks').mkdir(mode=0o700,parents=True,exist_ok=True)
 slots=Path('/var/lib/pi-sandbox/slots');slots.mkdir(mode=0o700,parents=True,exist_ok=True)
 run('chown','pi-sandbox:pi-sandbox-client',str(slots))
 fstab=Path('/etc/fstab');old=fstab.read_text();new=old
-for index in range(8):
+for index in range(6):
  disk=Path('/opt/pi-sandbox/disks')/f'slot-{index}.img';mount=slots/str(index);mount.mkdir(mode=0o700,exist_ok=True)
  if not disk.exists():
   with disk.open('wb') as f:f.truncate(128*1024*1024)
@@ -59,7 +59,7 @@ import subprocess,time
 unit=''' + repr('''[Unit]
 Description=Pi isolated command runner
 After=local-fs.target apparmor.service
-RequiresMountsFor=/var/lib/pi-sandbox/slots/0 /var/lib/pi-sandbox/slots/1 /var/lib/pi-sandbox/slots/2 /var/lib/pi-sandbox/slots/3 /var/lib/pi-sandbox/slots/4 /var/lib/pi-sandbox/slots/5 /var/lib/pi-sandbox/slots/6 /var/lib/pi-sandbox/slots/7
+RequiresMountsFor=/var/lib/pi-sandbox/slots/0 /var/lib/pi-sandbox/slots/1 /var/lib/pi-sandbox/slots/2 /var/lib/pi-sandbox/slots/3 /var/lib/pi-sandbox/slots/4 /var/lib/pi-sandbox/slots/5
 
 [Service]
 User=pi-sandbox
@@ -68,7 +68,7 @@ ExecStart=/usr/bin/python3 /opt/pi-sandbox/code/runner.py
 RuntimeDirectory=pi-sandbox
 RuntimeDirectoryMode=0750
 UMask=0077
-Environment=PI_SANDBOX_POOL_SIZE=8
+Environment=PI_SANDBOX_POOL_SIZE=6
 Delegate=cpu memory pids
 MemoryMax=256M
 MemorySwapMax=0

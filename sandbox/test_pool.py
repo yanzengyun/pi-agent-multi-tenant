@@ -48,6 +48,16 @@ class Tests(unittest.TestCase):
         same,reused=pool.acquire(ALICE)
         self.assertTrue(reused); self.assertEqual(same.stat().st_mode & 0o777,0o700)
 
+    def test_shrinking_preserves_owners_and_rejects_out_of_range(self):
+        for index in range(2, 8): (self.root/str(index)/'work').mkdir(parents=True)
+        pool = Pool(self.root, 8)
+        work, _ = pool.acquire(ALICE)
+        (work/'keep').write_text('FAKE_ALICE')
+        smaller = Pool(self.root, 6)
+        self.assertEqual(smaller.acquire(ALICE)[0].joinpath('keep').read_text(), 'FAKE_ALICE')
+        (self.root/'owners.json').write_text(json.dumps({ALICE: 6}))
+        with self.assertRaisesRegex(RuntimeError, 'invalid_pool_ownership'): Pool(self.root, 6)
+
     def test_dirty_unowned_slots_and_duplicate_ownership_fail_closed(self):
         (self.root/'0'/'work'/'leftover').write_text('FAKE')
         with self.assertRaisesRegex(RuntimeError,'unowned_pool_slot_not_empty'):Pool(self.root,2).acquire(ALICE)
