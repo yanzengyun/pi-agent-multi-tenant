@@ -17,10 +17,19 @@ function fixture(t, action, contextFactory) {
     SessionManager: { create: () => ({ getSessionFile: () => undefined }) },
     SettingsManager: { inMemory: () => ({}) },
     async createAgentSession(options) {
+      assert.equal(options.resourceLoader.getSystemPrompt(), undefined, 'must keep native Pi system builder');
+      let system = 'PI_NATIVE_TEST_DOUBLE\n' + options.resourceLoader.getAgentsFiles().agentsFiles.map(f => f.content).join('\n') + '\n' + options.customTools.map(t => t.name + ': ' + (t.promptGuidelines ?? []).join('\n')).join('\n');
       const session = {
-        systemPrompt: options.resourceLoader.getSystemPrompt(), messages: [],
+        systemPrompt: system, messages: [],
         getActiveToolNames: () => options.tools, subscribe: () => () => {}, dispose() {},
         async prompt(prompt) {
+          for (const ext of options.resourceLoader.getExtensions().extensions) {
+            for (const handler of ext.handlers.get('before_agent_start') ?? []) {
+              const result = await handler({ systemPrompt: system, prompt });
+              if (result?.systemPrompt !== undefined) system = result.systemPrompt;
+            }
+          }
+          session.systemPrompt = system;
           session.text = await action(options.customTools, prompt, session.systemPrompt, session);
           session.messages.push({ role: 'assistant', ...session.final });
         },
@@ -156,9 +165,9 @@ test('SDK cmd is scoped by the queue and cannot grant command access to persona 
   const called = [];
   const {store,queue} = fixture(t, async (tools,prompt,system) => {
     assert.ok(!tools.some(tool=>tool.name==='time_now'));
-    assert.match(system,/TZ=Asia\/Shanghai date/);
     const cmd = tools.find(t=>t.name==='cmd');
     if (prompt==='draft') {assert.equal(cmd,undefined); return 'FAKE_DRAFT';}
+    assert.match(system,/TZ=Asia\/Shanghai date/);
     assert.ok(cmd); await cmd.execute('fake',{command:'printf FAKE',userId:'another-user',socket:'/etc/passwd'});
     return 'FAKE_OK';
   }, userId=>({sandbox:{execute:async command=>{called.push({userId,command});return {stdout:'FAKE'};}}}));

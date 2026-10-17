@@ -86,7 +86,7 @@ test('administrator traces show the selected user memory and reject foreign run 
   assert.equal(listing.data.runs[0].preview, 'recall');
   const detail = await api(`${route}/${run.id}/trace`, { token: admin });
   assert.equal(detail.data.run.response, 'TRACE_ALICE_PRIVATE');
-  assert.ok(detail.data.events.some(event => event.kind === 'prompt' && event.payload.system.includes('TRACE_ALICE_PRIVATE')));
+  assert.ok(detail.data.events.some(event => event.kind === 'prompt' && event.payload.context.memory.includes('TRACE_ALICE_PRIVATE')));
   assert.ok(detail.data.events.some(event => event.kind === 'tool' && event.payload.name === 'memory_read'));
   assert.deepEqual((await api(`/api/admin/users/${bob.user.id}/runs`, { token: admin })).data.runs, []);
 });
@@ -144,7 +144,7 @@ test('memory, conversations, messages, runs and trace cannot cross user boundari
   assert.equal((await api(`/api/runs/${run.id}`, { token: bob.token })).status, 404);
   assert.equal((await api(`/api/runs/${run.id}/trace`, { token: bob.token })).status, 404);
   const trace = (await api(`/api/runs/${run.id}/trace`, { token: alice.token })).data.events;
-  assert.ok(trace.some(e => e.kind === 'prompt' && e.payload.system.includes('ALICE_PRIVATE')));
+  assert.ok(trace.some(e => e.kind === 'prompt' && e.payload.context.memory.includes('ALICE_PRIVATE')));
   assert.equal((await api(`/api/conversations/${conversation.id}/messages`, { token: alice.token })).data.messages.length, 2);
 });
 

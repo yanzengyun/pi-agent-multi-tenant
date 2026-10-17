@@ -2,6 +2,15 @@
 
 更新时间：2026-10-16。
 
+## 恢复 Pi 原生提示词与注入机制（2026-10-17 11:58）
+
+- 用户要求除SQLite记忆和授权工具不同外，采用主助手相同的原生机制。生产PiEngine的getSystemPrompt改为undefined，不再用engine.mjs手写中文system覆盖原生；tools的promptSnippet/promptGuidelines由Pi渲染。通用运行边界和用户人物通过原生project_context进入，现有AGENTS数据库镜像不改。
+- tenant-resources.mjs仅提供当前用户两份明确路径的AGENTS上下文（服务维护基础规则、用户workspace人物设定）；不扫描宿主机祖先目录，不加载主账号私人插件/AGENTS/记忆/凭据。Skills仍为空，外部插件须显式按权限接入；不是把主账号整套配置复制给租户。
+- SQLite记忆以before_agent_start扩展追加到原生system，与主助手pi-memory同一钩子；快照标识是内容hash，无当前时间戳，内容不变时跨轮字节稳定，记忆写入后下一轮刷新。SQLite和既有memory_read/write/update/forget不迁移不改数据，仍无自动事实抽取/向量库。时间前缀机制保持，不添加动态system时钟。
+- 旧会话下一轮会恢复历史、构造新原生提示并投影最终请求，不必/new。prompt事件现在存context.agentProfile/memory而非伪造system；context事件stage=native_before_extensions，不代表插件注入后最终正文，需要现有按需限次捕获查看。
+- 本机105项测试通过。scripts/verify-native-prompt.mjs在本机、服务器staging及已部署代码运行，5次假Key+loopback合成HTTP请求验证：默认expert coding preamble、原生AGENTS上下文、SQLite记忆hook、旧custom会话迁移且历史保留、记忆不变system稳定/更新下一轮可见、工具白名单、A/B用户隔离、保存payload等于HTTP正文。未使用生产用户数据或发送合成微信。
+- 已update-live，备份/home/admin/.local/share/pi-agent-multi-tenant/backups/20261017-115747；用户/微信绑定/人物/记忆摘要核验保持，主Pi未重启，多用户健康ok。现有真实用户下一条消息生效，尚未捕获迁移后的生产微信请求，不能把隔离SDK结果说成用户手机端验收。
+
 ## 多用户按需最终请求捕获（2026-10-17）
 
 - 用户要求捕获多助手三次；默认目标为刚才讨论的小写lucy。新增src/request-capture.mjs及流式context-capture.mjs，通过resourceLoader的临时before_provider_request扩展保存每轮首个最终payload；工具后续调用不消费计数。默认关闭，无公共开启接口，不恢复旧trace服务。

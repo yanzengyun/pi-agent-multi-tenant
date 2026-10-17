@@ -86,7 +86,7 @@ test('own AGENTS preferences are mirrored and injected without granting cross-us
   assert.equal((await api('/api/account/agents', alice.token, 'PUT', { content: 'x'.repeat(8001) })).status, 400);
   const c = store.createConversation(alice.user.id, 'fake'), run = store.createRun(alice.user.id, c.id, 'hello');
   app.queue.kick(); await app.queue.work;
-  assert.ok(store.traces(alice.user.id, run.id).some(e => e.kind === 'prompt' && e.payload.system.includes(content)));
+  assert.ok(store.traces(alice.user.id, run.id).some(e => e.kind === 'prompt' && e.payload.context.agentProfile.includes(content)));
   assert.equal((await api('/api/account/wechat', alice.token)).status, 503);
   assert.equal((await api('/api/account/reminders', alice.token)).status, 200);
 });

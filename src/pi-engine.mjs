@@ -1,10 +1,10 @@
-import { requestCaptureExtensions } from './request-capture.mjs';
+import { tenantResourceLoader } from './tenant-resources.mjs';
+import { TOOL_GUIDELINES } from './tool-guidelines.mjs';
 import { mkdirSync, realpathSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { withTimeContext } from './time-context.mjs';
-import { systemPrompt } from './engine.mjs';
 import { isQuotaFailure } from './model-errors.mjs';
 import { memorySnapshot } from './memory.mjs';
 
@@ -31,16 +31,7 @@ export class PiEngine {
     const manager = ctx.conversation.sdk_file
       ? SessionManager.open(this.checkedFile(ctx.conversation.sdk_file, sessions), sessions, workspace)
       : SessionManager.create(workspace, sessions);
-    const resourceLoader = {
-      getExtensions: () => ({ extensions: requestCaptureExtensions(ctx, this.config.apiKey), errors: [], runtime: createExtensionRuntime() }),
-      getSkills: () => ({ skills: [], diagnostics: [] }),
-      getPrompts: () => ({ prompts: [], diagnostics: [] }),
-      getThemes: () => ({ themes: [], diagnostics: [] }),
-      getAgentsFiles: () => ({ agentsFiles: [] }),
-      getSystemPrompt: () => systemPrompt(ctx.memory(), ctx.agentProfile?.()), getSystemPromptSource: () => undefined,
-      getAppendSystemPrompt: () => [], getAppendSystemPromptSources: () => [],
-      extendResources() {}, async reload() {},
-    };
+    const resourceLoader = tenantResourceLoader(ctx, workspace, agentDir, createExtensionRuntime, this.config.apiKey);
     const Type = this.Type;
     const result = text => ({ content: [{ type: 'text', text }], details: {} });
     const customTools = [
@@ -160,7 +151,9 @@ export class PiEngine {
     const { session } = await createAgentSession({ cwd: workspace, agentDir, model, modelRuntime: runtime,
       thinkingLevel: this.config.thinkingLevel, resourceLoader, sessionManager: manager,
       settingsManager: SettingsManager.inMemory({ compaction: { enabled: true }, retry: { enabled: false } }),
-      tools: customTools.map(t => t.name), customTools,
+      tools: customTools.map(t => t.name),
+      customTools: customTools.map(tool => ({ ...tool, promptSnippet: tool.description.split(/[。\n]/)[0],
+        promptGuidelines: TOOL_GUIDELINES[tool.name] ?? [] })),
     });
     const abort = () => { void session.abort(); };
     const unsubscribe = session.subscribe(event => {
@@ -168,7 +161,7 @@ export class PiEngine {
         ctx.emit('sdk_event', this.sanitize(event));
       }
     });
-    ctx.emit('context', { system: session.systemPrompt, activeTools: session.getActiveToolNames(),
+    ctx.emit('context', { stage: 'native_before_extensions', system: session.systemPrompt, activeTools: session.getActiveToolNames(),
       provider: this.config.provider, model: this.config.model });
     ctx.signal.addEventListener('abort', abort, { once: true });
     try {

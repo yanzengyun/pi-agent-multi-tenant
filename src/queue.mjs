@@ -1,4 +1,3 @@
-import { systemPrompt } from './engine.mjs';
 import { EventEmitter } from 'node:events';
 import { directVoiceText } from './voice-preferences.mjs';
 import { isQuotaFailure } from './model-errors.mjs';
@@ -57,7 +56,7 @@ export class RunQueue extends EventEmitter {
         await this.beforeRun(run, controller.signal);
         if (controller.signal.aborted) throw new Error('Run aborted');
         emit('prompt', { mode: this.engine.mode || 'mock',
-          system: systemPrompt(context.memory(), context.agentProfile()), input: run.prompt });
+          context: { agentProfile: context.agentProfile(), memory: context.memory() }, input: run.prompt });
         this.store.message(run.user_id, run.conversation_id, 'user', run.prompt);
         const direct = context.speech && directVoiceText(run.prompt);
         let response;

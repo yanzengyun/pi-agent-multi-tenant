@@ -241,3 +241,15 @@ python3 -m unittest discover -s sandbox -p 'test_*.py'
 ### 聊天时间基准
 
 首次消息、用户消息间隔超过10分钟或跨北京时间日期时，系统在本轮模型输入前附加北京时间。用户原文保持；历史不改写，系统提示不再每轮刷新UTC时钟。计时按用户和会话隔离，人物设定草稿不影响聊天计时。需要精确时间时仍由命令工具核对。
+
+### 原生 Pi 提示词与租户资源
+
+生产 `PiEngine` 不提供自定义 system 覆盖字符串，使用 SDK 原生提示词构造；实际启用工具的 `promptSnippet/promptGuidelines` 由 Pi 渲染。租户 ResourceLoader 明确提供两份项目上下文：服务维护的基础 AGENTS 规则和该用户数据库人物设定对应的 `workspace/AGENTS.md`。不向上遍历宿主机祖先目录，不加载管理员的 AGENTS、记忆、凭据或插件配置；数据库人物设定是镜像的权威来源。
+
+SQLite 记忆通过 `before_agent_start` 扩展注入，与主助手 pi-memory 使用同一注入时机；不安装主账号的 pi-memory 文件存储。快照按内容版本稳定，读取当前用户全部长期记忆（现有8000字符上限）；记忆改变后下一轮刷新，同一轮工具结果仍提供最新写入内容。没有快照时钟，不把版本或历史时间作为当前时间。现有记忆读写/更正/遗忘工具与权限不变，没有新增自动提取或记忆搜索服务。
+
+现有会话直接恢复，下一轮重新构造原生 system 后由扩展投影到最终请求，不删除旧聊天/会话。工具、压缩和模型循环保持 Pi 原生；Skills/外部扩展仍仅能接入服务明确授权的资源，不能自动加载主账号私有插件。
+
+`prompt` 运行事件现在记录 `context.agentProfile/memory` 输入，不再伪装成模型最终system；`context` 事件的 `native_before_extensions` 是扩展执行前视图。若需完整运行时注入后的正文，用显式按用户限次开启的最终请求捕获。
+
+验证：`npm test`；安装SDK后 `node scripts/verify-native-prompt.mjs [SDK入口绝对路径]`。后者使用假Key、临时目录及loopback模拟接口，覆盖旧会话迁移、原生system、AGENTS加载、记忆刷新、工具白名单、跨用户隔离和实际HTTP正文一致性，不使用生产数据。
