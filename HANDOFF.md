@@ -2,6 +2,11 @@
 
 更新时间：2026-10-16。
 
+## 人物设定与事实记忆分流（2026-10-17 14:57）
+
+- TENANT_RULES新增固定分流：助手人设/称呼/风格/行为规则归自己AGENTS人物设定，用户背景/经历/目标事实归SQLite长期记忆；明确改人设先persona_read再直接persona_write，保留无关设定，不再重复memory_write或额外确认。使用“记住”措辞也按内容路由，不改各用户现有人物和记忆数据。
+- 105项现有测试通过，已update-live；备份 /home/admin/.local/share/pi-agent-multi-tenant/backups/20261017-145736。用户/绑定/人物/记忆摘要保持，主Pi进程未重启，健康正常。未给任何用户发合成微信，也未清理历史重复记忆。主助手对应AGENTS规则已上线。
+
 ## 恢复 Pi 原生提示词与注入机制（2026-10-17 11:58）
 
 - 用户要求除SQLite记忆和授权工具不同外，采用主助手相同的原生机制。生产PiEngine的getSystemPrompt改为undefined，不再用engine.mjs手写中文system覆盖原生；tools的promptSnippet/promptGuidelines由Pi渲染。通用运行边界和用户人物通过原生project_context进入，现有AGENTS数据库镜像不改。
