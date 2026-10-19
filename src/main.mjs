@@ -21,7 +21,7 @@ const engine = mode === 'mock' ? new MockEngine() : new PiEngine({
     ? resolve('./sdk-runtime/node_modules/@earendil-works/pi-coding-agent/dist/index.js') : '@earendil-works/pi-coding-agent'),
   modelsPath: resolve(process.env.ASSISTANT_MODELS_FILE || './models.json'),
   provider,
-  model: process.env.ASSISTANT_MODEL || (provider === 'deepseek' ? 'deepseek-flash' : 'MiniMax-M3.1-Flash-Preview'),
+  model: process.env.ASSISTANT_MODEL || (provider === 'deepseek' ? 'deepseek-flash' : 'MiniMax-M3.1-Flash'),
   thinkingLevel: 'medium', apiKey: modelKey,
   searchKey: process.env.ASSISTANT_SEARCH === 'on' ? process.env.MINIMAX_CN_API_KEY : undefined,
 });

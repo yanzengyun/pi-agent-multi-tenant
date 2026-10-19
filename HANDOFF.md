@@ -1,5 +1,12 @@
 # 开发交接
 
+## 切换 MiniMax M3.1 Flash 正式版（2026-10-20）
+
+- 正式模型 ID 为 `MiniMax-M3.1-Flash`。10月19日三次测试返回529，未切生产；10月20日使用现有Key、实际Pi SDK与隔离临时会话复测通过流式回复、工具调用/结果续答、历史续聊，三条assistant响应均返回正式版ID，thinking维持medium。未向生产微信发送合成消息。
+- 已备份并更新主助手与multi-live模型目录、主settings及multi私有env，保留Preview条目供历史/回滚。主助手空闲/reload和/model后JSONL model_change确认为正式版；multi空队列重启后进程ASSISTANT_MODEL为正式版，health正常。主AGENTS/MEMORY哈希保持，未改用户绑定与数据。
+- 配置备份：`/home/admin/.local/share/pi-agent-service/backups/formal-model-20261020-011502`。部署脚本/默认配置同步使用正式版ID；不是更换Key或API端点。
+
+
 更新时间：2026-10-16。
 
 ## 人物设定与事实记忆分流（2026-10-17 14:57）
