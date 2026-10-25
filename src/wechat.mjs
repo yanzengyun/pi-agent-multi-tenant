@@ -1,6 +1,7 @@
 import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import QRCode from 'qrcode';
+import { REMINDER_TTL_MS } from './reminders.mjs';
 import { QUOTA_NOTICE } from './model-errors.mjs';
 
 const DEFAULT_BASE = 'https://ilinkai.weixin.qq.com';
@@ -22,8 +23,15 @@ export class ILinkClient {
       body: body === undefined ? undefined : JSON.stringify({ ...body, base_info: { channel_version: '1.0.0' } }),
     });
     const data = await response.json();
-    if (data.errcode === -14 || data.ret === -14) throw new Error('wechat_session_expired');
-    if (!response.ok || (typeof data.ret === 'number' && data.ret !== 0) || (typeof data.errcode === 'number' && data.errcode !== 0)) throw new Error('wechat_request_failed');
+    if (!response.ok || (typeof data.ret === 'number' && data.ret !== 0) || (typeof data.errcode === 'number' && data.errcode !== 0) || data.errmsg) {
+      const error = new Error(data.errcode === -14 || data.ret === -14 ? 'wechat_session_expired' : 'wechat_request_failed');
+      error.wechat = { httpStatus: response.status,
+        ...(typeof data.ret === 'number' ? { ret: data.ret } : {}),
+        ...(typeof data.errcode === 'number' ? { errcode: data.errcode } : {}),
+        prepareFailed: /prepare failed/i.test(String(data.errmsg || '')) };
+      throw error;
+    }
+    if (path === '/ilink/bot/sendmessage' && !(data.message_id || data.ret === 0 || data.errcode === 0)) throw new Error('wechat_unconfirmed_response');
     return data;
   }
   qr(signal) { return this.request(DEFAULT_BASE, '/ilink/bot/get_bot_qrcode?bot_type=3', { signal }); }
@@ -32,11 +40,25 @@ export class ILinkClient {
   updates(binding, signal) {
     return this.request(binding.base_url, '/ilink/bot/getupdates', { token: binding.token, signal, timeout: 55000, body: { get_updates_buf: binding.cursor } });
   }
-  send(binding, inbox, text, clientId, signal) {
-    return this.request(binding.base_url, '/ilink/bot/sendmessage', { token: binding.token, signal,
+  async send(binding, inbox, text, clientId, signal) {
+    const send = withoutContext => this.request(binding.base_url, '/ilink/bot/sendmessage', { token: binding.token, signal,
       body: { msg: { from_user_id: '', to_user_id: binding.remote_user, client_id: clientId,
-        message_type: 2, message_state: 2, context_token: inbox.context_token,
+        message_type: 2, message_state: 2,
+        ...(!withoutContext && inbox.context_token ? { context_token: inbox.context_token } : {}),
         item_list: [{ type: 1, text_item: { text } }] } } });
+    try { return await send(false); }
+    catch (error) {
+      if (!error.wechat?.prepareFailed || !inbox.context_token) throw error;
+      // A known prepare rejection only: omit the field entirely, keeping the client ID.
+      try {
+        const response = await send(true);
+        return { ...response, contextFallback: true };
+      } catch (fallbackError) {
+        fallbackError.wechat = { ...(fallbackError.wechat || {}), contextFallback: true,
+          ...(typeof error.wechat.ret === 'number' ? { initialRet: error.wechat.ret } : {}), initialPrepareFailed: true };
+        throw fallbackError;
+      }
+    }
   }
   async uploadVoice(binding, voice, signal) {
     const audio = Buffer.from(voice.audio), key = randomBytes(16), filekey = randomBytes(16).toString('hex');
@@ -213,10 +235,27 @@ export class WechatManager {
     this.store.trace(inbox.run_id, 'wechat_api_accepted', { phase,
       ...(typeof response?.ret === 'number' ? { ret: response.ret } : {}),
       ...(typeof response?.errcode === 'number' ? { errcode: response.errcode } : {}),
-      upstreamMessageIdPresent: !!response?.message_id, clientDeliveryConfirmed: false });
+      upstreamMessageIdPresent: !!response?.message_id, ...(response?.contextFallback ? { contextFallback: true } : {}), clientDeliveryConfirmed: false });
   }
   async deliver() {
     for (const inbox of this.store.deliveries()) {
+      const now = Date.now(), reminder = inbox.message_id.startsWith('reminder:');
+      const created = this.store.db.prepare('SELECT created_at FROM runs WHERE id=?').get(inbox.run_id)?.created_at;
+      const scheduled = reminder ? Number(inbox.message_id.split(':').at(-1)) : created;
+      const weekdaysOnly = reminder && this.store.db.prepare('SELECT weekdays_only FROM reminder_schedules WHERE reminder_id=?')
+        .get(inbox.message_id.split(':')[1])?.weekdays_only;
+      if (weekdaysOnly && [0, 6].includes(new Date(scheduled + 8 * 3600000).getUTCDay())) {
+        this.store.delivered(inbox.id, 'cancelled');
+        this.store.trace(inbox.run_id, 'wechat_delivery_cancelled', { reason: 'weekend_reminder' });
+        continue;
+      }
+      if (Number.isFinite(scheduled) && now - scheduled > (reminder ? REMINDER_TTL_MS : 86400000)) {
+        this.store.delivered(inbox.id, 'expired');
+        this.store.trace(inbox.run_id, 'wechat_delivery_expired', { reminder });
+        continue;
+      }
+      const retry = this.store.db.prepare('SELECT * FROM wechat_delivery_state WHERE inbox_id=?').get(inbox.id);
+      if (retry?.next_at > now) continue;
       const binding = this.store.wechatBinding(inbox.user_id);
       if (!binding || binding.id !== inbox.binding_id) { this.store.delivered(inbox.id, 'cancelled'); continue; }
       if (binding.status !== 'connected') continue;
@@ -243,10 +282,21 @@ export class WechatManager {
           await this.client.sendVoice(binding, inbox, voice, media, `pi-${inbox.id}-voice`, signal);
           this.store.trace(inbox.run_id, 'audio_api_accepted', { format: 'mp3_file', durationMs: voice.duration, bytes: voice.audio.length, clientPlaybackConfirmed: false });
         }
-        if (!this.closed && this.current(binding)) this.store.delivered(inbox.id);
+        if (!this.closed && this.current(binding)) {
+          this.store.delivered(inbox.id);
+          this.store.db.prepare('DELETE FROM wechat_delivery_state WHERE inbox_id=?').run(inbox.id);
+        }
       } catch (error) {
         if (error.message === 'wechat_session_expired') this.store.bindingStatus(binding.id, 'expired');
-        // Keep the stable client IDs and durable outbox for a later retry.
+        if (this.closed || this.abort.signal.aborted) continue;
+        const attempts = (retry?.attempts || 0) + 1;
+        const category = ['wechat_session_expired', 'wechat_request_failed', 'wechat_unconfirmed_response'].includes(error.message)
+          ? error.message : 'wechat_transport_or_delivery_failed';
+        const nextAt = Date.now() + Math.min(15 * 60000, 30000 * 2 ** Math.min(attempts - 1, 5));
+        this.store.db.prepare('INSERT INTO wechat_delivery_state VALUES (?,?,?,?) ON CONFLICT(inbox_id) DO UPDATE SET attempts=excluded.attempts,next_at=excluded.next_at,last_error=excluded.last_error')
+          .run(inbox.id, attempts, nextAt, category);
+        this.store.trace(inbox.run_id, 'wechat_delivery_failed', { category, attempts, nextAt, ...(error.wechat || {}) });
+        if (reminder && attempts >= 4) this.store.delivered(inbox.id, 'failed');
       }
     }
   }

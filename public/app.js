@@ -175,8 +175,8 @@ async function refreshReminders() {
   if (!data.reminders.length) $('#reminder-list').textContent = '暂无提醒';
   for (const task of data.reminders) {
     const row = document.createElement('article'), label = document.createElement('span');
-    const state = { scheduled: '等待执行', waiting_for_wechat: '等待微信连接及首条消息', completed: '已排入投递' }[task.status] || task.status;
-    label.textContent = `${new Date(task.next_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })} · ${task.repeat_daily ? '每天' : '一次'} · ${state} · ${task.text}`;
+    const state = { scheduled: '等待执行', waiting_for_wechat: '等待微信连接及首条消息', completed: '已排入投递', expired: '已过期，不补发' }[task.status] || task.status;
+    label.textContent = `${new Date(task.next_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })} · ${task.weekdays_only ? '周一至周五' : task.repeat_daily ? '每天' : '一次'} · ${state} · ${task.text}`;
     row.append(label, action('取消', async () => {
       await api(`/api/admin/users/${user.id}/reminders/${task.id}`, 'DELETE', {}); await refreshReminders();
     })); $('#reminder-list').append(row);

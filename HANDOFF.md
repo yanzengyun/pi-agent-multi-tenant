@@ -1,3 +1,13 @@
+## Bob 提醒投递修复（2026-10-25 17:46）
+
+- 只读排查确认调度正常、微信投递积压：10-22 16:30为最后sent，17:30起积压；首次检查29条提醒pending、普通回复另1条pending，绑定connected。原发送catch不记录异常，历史失败原因无法追溯。
+- 用户批准修复后新增脱敏wechat_delivery_failed（仅分类/HTTP状态/ret/errcode/prepareFailed/次数/下次时间）、SQLite持久退避30/60/120秒至15分钟；提醒最多4次失败。sendmessage拒绝空JSON/显式错误，不把API接受当客户端送达；仅明确prepare failed时省略整个context_token，用同client_id重试，其他错误不触发fallback。
+- 提醒按原scheduledAt过期30分钟；过期一次性任务status=expired，每日漏执行跳到下一次、不补历史。普通回复超过24小时过期。旧积压29条已expired；部署前刚生成的周日17:30另1条经周末规则cancelled，不再发送。未创建合成微信测试，未重放历史。
+- reminder_schedules保存weekdays_only，创建工具支持weekdaysOnly（仅与daily一起用）；按北京时间跳过周六日，不含节假日调休日历。仅迁移bob明确写“工作日”的9条喝水提醒，全部下次为10-26周一原时间。已排队的周末提醒也取消；管理页面正确显示周一至周五。
+- 新产生真实积压提醒尝试日志确认HTTP200/ret=-2/prepare failed；移除上下文字段后仍返回-2。代码防护上线不等于平台已恢复；需要bob新发真实消息刷新自身上下文并继续核验，尚未获新消息结果，不要求重新扫码或宣称token一定过期。
+- 本地110项测试、远端32项针对提醒/微信/语音的隔离回归通过；私有数据库/源码备份：/home/admin/.local/share/pi-agent-multi-tenant/backups/reminder-delivery-20261025-174450，追加周末出队防护版本174552。只空队列重启多用户服务，health=ok/mode pi，主Pi PID1908保持，用户/绑定/人设/记忆摘要核验一致。
+- 部署器scripts/repair-reminder-delivery.py先比对生产文件SHA256、临时fixture测试、备份、定向迁移、health和身份核验；跟进部署可显式传已验证expected manifest，非无条件重复运行。新增两张side table为兼容迁移，未改现有表列或删除历史数据。
+
 # 开发交接
 
 ## 切换 MiniMax M3.1 Flash 正式版（2026-10-20）

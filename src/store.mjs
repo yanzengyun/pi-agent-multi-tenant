@@ -62,6 +62,11 @@ export class Store {
       CREATE TABLE IF NOT EXISTS reminders (
         id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), text TEXT NOT NULL,
         next_at INTEGER NOT NULL, repeat_daily INTEGER NOT NULL, status TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS wechat_delivery_state (
+        inbox_id TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0,
+        next_at INTEGER NOT NULL DEFAULT 0, last_error TEXT);
+      CREATE TABLE IF NOT EXISTS reminder_schedules (
+        reminder_id TEXT PRIMARY KEY, weekdays_only INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS invitations (
         id TEXT PRIMARY KEY, hash TEXT UNIQUE NOT NULL, target_user TEXT REFERENCES users(id),
         expires_at INTEGER NOT NULL, used_at INTEGER, revoked INTEGER NOT NULL DEFAULT 0);
@@ -98,6 +103,8 @@ export class Store {
       this.db.prepare('UPDATE invitations SET revoked=1 WHERE target_user=?').run(userId);
       this.db.prepare("UPDATE runs SET status='cancelled',error='user_deleted' WHERE user_id=? AND status='queued'").run(userId);
       this.db.prepare("UPDATE wechat_inbox SET delivery='cancelled' WHERE user_id=? AND delivery='pending'").run(userId);
+      this.db.prepare('DELETE FROM reminder_schedules WHERE reminder_id IN (SELECT id FROM reminders WHERE user_id=?)').run(userId);
+      this.db.prepare('DELETE FROM wechat_delivery_state WHERE inbox_id IN (SELECT id FROM wechat_inbox WHERE user_id=?)').run(userId);
       this.db.prepare('DELETE FROM reminders WHERE user_id=?').run(userId);
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }

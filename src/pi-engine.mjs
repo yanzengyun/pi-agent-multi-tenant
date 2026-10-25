@@ -118,8 +118,8 @@ export class PiEngine {
         async execute(_id, { page, etag, confirm, reason }) { return result(JSON.stringify(await ctx.notes.remove(page, etag, confirm, reason, ctx.signal))); } },
     );
     if (ctx.reminders) customTools.push(
-      { name: 'reminder_create', label: 'Create Reminder', description: 'Only when the user asks: schedule a text reminder for this user. at must be a future ISO timestamp with timezone; daily repeats every 24h. WeChat needs the user to send at least one message first.',
-        parameters: Type.Object({ text: Type.String({ maxLength: 2000 }), at: Type.String(), daily: Type.Optional(Type.Boolean()) }),
+      { name: 'reminder_create', label: 'Create Reminder', description: 'Only when the user asks: schedule a text reminder for this user. at must be a future ISO timestamp with timezone; daily repeats every day; weekdaysOnly with daily skips Saturday/Sunday in Asia/Shanghai (not holiday-aware). Reminders expire 30 minutes after their scheduled time. WeChat needs the user to send at least one message first.',
+        parameters: Type.Object({ text: Type.String({ maxLength: 2000 }), at: Type.String(), daily: Type.Optional(Type.Boolean()), weekdaysOnly: Type.Optional(Type.Boolean()) }),
         async execute(_id, value) { return result(JSON.stringify(ctx.reminders.create(value))); } },
       { name: 'reminder_list', label: 'List Reminders', description: 'List only this user’s reminders.', parameters: Type.Object({}),
         async execute() { return result(JSON.stringify(ctx.reminders.list())); } },

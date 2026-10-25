@@ -160,6 +160,8 @@ test('failed deliveries retain stable client IDs; unbinding cancels pending repl
   manager.ingest(binding, raw); const queue = new RunQueue(store, new MockEngine()); await queue.work;
   client.failSend = true; await manager.flush(); assert.equal(store.deliveries().length, 1);
   client.failSend = false; await manager.flush();
+  assert.equal(client.sent.length, 1, 'backoff prevents immediate resend');
+  store.db.exec('UPDATE wechat_delivery_state SET next_at=0'); await manager.flush();
   assert.equal(client.sent[0].clientId, client.sent[1].clientId); assert.equal(store.deliveries().length, 0);
   manager.ingest(binding, { ...raw, message_id: 'm2' }); queue.kick(); await queue.work;
   manager.disconnect(alice.id); await manager.flush();
@@ -268,6 +270,7 @@ test('voice outbox isolates users and retries audio without repeating delivered 
   store.runStatus(run.id, 'completed', '文字结果');
   await manager.flush();
   assert.equal(store.deliveries().length, 1); assert.equal(store.voice(alice.id, run.id).text_sent, 1);
+  store.db.exec('UPDATE wechat_delivery_state SET next_at=0');
   await manager.flush();
   assert.equal(uploads, 1); assert.equal(voices[0], voices[1]); assert.equal(client.sent.length, 1);
   assert.equal(store.deliveries().length, 0); assert.equal(store.voice(alice.id, run.id), undefined);
