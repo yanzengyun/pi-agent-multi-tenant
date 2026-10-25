@@ -1,3 +1,8 @@
+## Bob 新消息后投递核验（2026-10-25 21:01）
+
+- bob 21:01:05新消息已入库，模型run completed/error null；processing回执21:01:05与reply21:01:10均记录wechat_api_accepted/upstreamMessageIdPresent=true，outbox sent。该新回合未见投递失败，不将API接受等同客户端实际送达。
+- 绑定connected、health ok/mode pi；bob无pending，29条旧提醒expired、1条周末提醒cancelled，另1条旧普通回复expired。新消息后回复链路恢复，支持旧会话上下文相关问题的判断，但不宣称平台精确失效时限或明早主动提醒已验收；下次周一09:00仍待真实触发。
+
 ## Bob 提醒投递修复（2026-10-25 17:46）
 
 - 只读排查确认调度正常、微信投递积压：10-22 16:30为最后sent，17:30起积压；首次检查29条提醒pending、普通回复另1条pending，绑定connected。原发送catch不记录异常，历史失败原因无法追溯。
