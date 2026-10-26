@@ -1,15 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PiEngine } from '../src/pi-engine.mjs';
 import { RunQueue } from '../src/queue.mjs';
 import { Store } from '../src/store.mjs';
 
-function fixture(t, action, contextFactory) {
+function fixture(t, action, contextFactory, prepareEngine) {
   const directory = mkdtempSync(join(tmpdir(), 'pi-tools-'));
   const store = new Store(directory), engine = new PiEngine({ provider: 'fake', model: 'fake' });
+  prepareEngine?.(engine);
   engine.Type = { Object: value => value, String: value => value, Number: value => value, Boolean: value => value, Optional: value => value };
   engine.sdk = {
     createExtensionRuntime: () => ({}),
@@ -40,7 +41,7 @@ function fixture(t, action, contextFactory) {
   };
   const queue = new RunQueue(store, engine, { contextFactory });
   t.after(async () => { await queue.close(); store.close(); rmSync(directory, { recursive: true, force: true }); });
-  return { store, queue };
+  return { store, queue, engine };
 }
 
 test('SDK memory_write appends by default and keeps existing user facts', async t => {
@@ -284,4 +285,29 @@ test('time prefix reaches SDK while business history stays raw, is scoped and sk
   store.db.prepare('UPDATE runs SET created_at=created_at+1000 WHERE id=?').run(draft.id);
   assert.equal(store.previousUserRunReceivedAt(alice.id, a.id, after.id), previous);
   assert.equal(store.previousUserRunReceivedAt(bob.id, a.id, after.id), null);
+});
+
+test('read_doc is scoped to the current workspace and absent from persona drafts', async t => {
+  let ownPath, foreignPath;
+  const { store, queue } = fixture(t, async (tools, prompt) => {
+    const tool = tools.find(item => item.name === 'read_doc');
+    if (prompt === 'draft') { assert.equal(tool, undefined); return 'DRAFT'; }
+    assert.ok(tool); assert.ok(!('userId' in tool.parameters));
+    const value = JSON.parse((await tool.execute('read', { path: ownPath, userId: 'foreign' })).content[0].text);
+    assert.match(value.content, /ALICE_DOC/);
+    await assert.rejects(tool.execute('escape', { path: foreignPath }), /document_outside_tenant/);
+    return 'OK';
+  }, undefined, engine => { engine.documentConverter = async path => readFileSync(path, 'utf8'); });
+  const alice = store.createUser('doc_alice', 'fake'), bob = store.createUser('doc_bob', 'fake');
+  const aliceWorkspace = join(store.directory, 'tenants', alice.id, 'workspace');
+  const bobWorkspace = join(store.directory, 'tenants', bob.id, 'workspace');
+  mkdirSync(aliceWorkspace, { recursive: true }); mkdirSync(bobWorkspace, { recursive: true });
+  ownPath = join(aliceWorkspace, 'own.csv'); foreignPath = join(bobWorkspace, 'foreign.csv');
+  writeFileSync(ownPath, 'ALICE_DOC,1\n'); writeFileSync(foreignPath, 'BOB_PRIVATE,2\n');
+  const conversation = store.createConversation(alice.id, 'docs');
+  for (const [prompt, mode] of [['read', undefined], ['draft', 'persona_draft']]) {
+    const run = store.createRun(alice.id, conversation.id, prompt, mode);
+    const settled = new Promise(resolve => queue.once('settled', resolve)); queue.kick(); await settled;
+    assert.equal(store.run(alice.id, run.id).status, 'completed');
+  }
 });

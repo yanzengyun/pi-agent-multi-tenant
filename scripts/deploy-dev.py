@@ -42,7 +42,7 @@ if (private/'silverbullet.json').exists():extra+='ASSISTANT_SB_CONFIG='+str(priv
 env=private/'env';env.write_text('ASSISTANT_ADMIN_PASSWORD='+shlex.quote(password)+'\nASSISTANT_DATA_DIR='+str(base/'data')+'\nASSISTANT_ENGINE=pi\nASSISTANT_PORT=32214\nPI_SDK_MODULE=/home/admin/pi-agent-multi-tenant-dev/sdk-runtime/node_modules/@earendil-works/pi-coding-agent/dist/index.js\nASSISTANT_SEARCH=on\n'+extra);env.chmod(0o600)
 launcher=Path('/home/admin/pi-agent-multi-tenant-dev/start-dev.sh')
 launcher.write_text('#!/bin/sh\nset -eu\numask 077\n. "$HOME/.config/pi-agent/env"\n. "$HOME/.config/pi-agent-multi-tenant-dev/env"\nexport MINIMAX_CN_API_KEY ASSISTANT_ADMIN_PASSWORD ASSISTANT_DATA_DIR ASSISTANT_ENGINE ASSISTANT_PORT PI_SDK_MODULE ASSISTANT_SEARCH ASSISTANT_WECHAT ASSISTANT_WECHAT_PROTECTION ASSISTANT_SB_CONFIG\ncd "$HOME/pi-agent-multi-tenant-dev"\nexec /usr/local/bin/node src/main.mjs\n');launcher.chmod(0o700)
-subprocess.run(['runuser','-u','admin','--','npm','ci','--prefix','/home/admin/pi-agent-multi-tenant-dev','--omit=peer','--ignore-scripts','--no-audit','--no-fund'],check=True)
+subprocess.run(['runuser','-u','admin','--','npm','ci','--prefix','/home/admin/pi-agent-multi-tenant-dev','--legacy-peer-deps','--ignore-scripts','--no-audit','--no-fund'],check=True)
 subprocess.run(['runuser','-u','admin','--','npm','ci','--prefix','/home/admin/pi-agent-multi-tenant-dev/sdk-runtime','--ignore-scripts','--no-audit','--no-fund'],check=True)
 subprocess.run(['chown','-R','admin:admin',str(base),str(private),str(launcher)],check=True)
 # Never touch the existing pi-wechat tmux session. Restart only this dev session.

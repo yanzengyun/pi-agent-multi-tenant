@@ -1,10 +1,51 @@
-import { createCipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { mkdir, readdir, stat, unlink, writeFile } from 'node:fs/promises';
+import { extname, join } from 'node:path';
 import QRCode from 'qrcode';
 import { REMINDER_TTL_MS } from './reminders.mjs';
 import { QUOTA_NOTICE } from './model-errors.mjs';
+import { DOCUMENT_EXTENSIONS, MAX_DOCUMENT_BYTES, safeDocumentName } from './document-reader.mjs';
 
 const DEFAULT_BASE = 'https://ilinkai.weixin.qq.com';
+const CDN_BASE = 'https://novac2c.cdn.weixin.qq.com/c2c';
+const MAX_INBOX_BYTES = 64 * 1024 * 1024;
+
+function decryptFile(encrypted, encodedKey) {
+  const hex = Buffer.from(encodedKey, 'base64').toString('utf8');
+  if (!/^[a-f0-9]{32}$/i.test(hex)) throw new Error('invalid_document_key');
+  const decipher = createDecipheriv('aes-128-ecb', Buffer.from(hex, 'hex'), null);
+  decipher.setAutoPadding(false);
+  const plain = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  const pad = plain.at(-1);
+  if (pad >= 1 && pad <= 16 && plain.subarray(-pad).every(value => value === pad)) return plain.subarray(0, -pad);
+  return plain;
+}
+
+async function limitedBody(response, maximum) {
+  const length = Number(response.headers.get('content-length') || 0);
+  if (Number.isFinite(length) && length > maximum) throw new Error('document_too_large');
+  if (!response.body) throw new Error('document_download_failed');
+  const reader = response.body.getReader(), chunks = []; let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maximum) { await reader.cancel(); throw new Error('document_too_large'); }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks, size);
+}
+
+async function inboxBytes(directory) {
+  let total = 0;
+  try {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.isFile()) total += (await stat(join(directory, entry.name))).size;
+    }
+  } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  return total;
+}
 export function wechatBase(value) {
   const url = new URL(value);
   if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443') ||
@@ -84,6 +125,20 @@ export class ILinkClient {
       body: { msg: { from_user_id: '', to_user_id: binding.remote_user, client_id: clientId,
         message_type: 2, message_state: 2, context_token: inbox.context_token,
         item_list: [{ type: 4, file_item: { media, file_name: 'voice-reply.mp3', len: String(voice.audio.length) } }] } } });
+  }
+  async downloadDocument(file, signal) {
+    const param = file?.media?.encrypt_query_param, key = file?.media?.aes_key;
+    if (typeof param !== 'string' || !param || param.length > 8192 || typeof key !== 'string' || key.length > 256) {
+      throw new Error('invalid_document_media');
+    }
+    const response = await this.fetcher(`${CDN_BASE}/download?encrypted_query_param=${encodeURIComponent(param)}`, {
+      redirect: 'error', signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(60000)]),
+    });
+    if (!response.ok) throw new Error('document_download_failed');
+    const encrypted = await limitedBody(response, MAX_DOCUMENT_BYTES + 16);
+    const plain = decryptFile(encrypted, key);
+    if (plain.length > MAX_DOCUMENT_BYTES) throw new Error('document_too_large');
+    return plain;
   }
 }
 
@@ -184,11 +239,47 @@ export class WechatManager {
         !raw.context_token || raw.context_token.length > 8192 || raw.message_id == null) return true;
     const messageId = String(raw.message_id);
     if (!messageId || messageId.length > 256 || !Array.isArray(raw.item_list)) return true;
+    if (this.store.hasWechatMessage(binding.bot_id, messageId)) return true;
+    if (!this.store.canAcceptWechat(binding.user_id)) return false;
     const text = raw.item_list.map(item => item.type === 1 ? item.text_item?.text : item.type === 3 ? item.voice_item?.text : '')
       .filter(value => typeof value === 'string' && value.length).join('\n');
-    // Initial transport supports text/voice transcription; no implicit media downloads.
+    const file = raw.item_list.find(item => item?.type === 4)?.file_item;
+    if (file) return this.ingestDocument(binding, messageId, raw.context_token, text, file, this.controllers.get(binding.id)?.signal);
     if (!text || text.length > 8000) return true;
     const accepted = this.store.acceptWechat(binding, { id: messageId, text, contextToken: raw.context_token });
+    if (accepted) this.onMessage();
+    return accepted;
+  }
+  async ingestDocument(binding, messageId, contextToken, text, file, signal) {
+    const name = safeDocumentName(file?.file_name), extension = extname(name).toLowerCase();
+    let note, savedPath;
+    const declared = Number(file?.len || 0);
+    if (!DOCUMENT_EXTENSIONS.has(extension)) {
+      note = `收到文件“${name}”，但当前 read_doc 不支持这种格式。请如实告知用户支持 Office、CSV、EPUB、RTF 和 PDF。`;
+    } else if (Number.isFinite(declared) && declared > MAX_DOCUMENT_BYTES) {
+      note = `收到文件“${name}”，但超过 8 MiB 的读取上限，请让用户压缩或拆分后重发。`;
+    } else {
+      try {
+        const buffer = await this.client.downloadDocument(file, signal);
+        if (!this.current(binding)) return true;
+        const inbox = join(this.store.directory, 'tenants', binding.user_id, 'workspace', 'inbox');
+        await mkdir(inbox, { recursive: true, mode: 0o700 });
+        if (await inboxBytes(inbox) + buffer.length > MAX_INBOX_BYTES) throw new Error('document_inbox_full');
+        const path = join(inbox, `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}-${name}`);
+        await writeFile(path, buffer, { flag: 'wx', mode: 0o600 });
+        savedPath = path;
+        note = `用户发送的文件已保存到当前租户私有目录：${path}\n文件名：${name}\n需要读取内容时使用 read_doc。`;
+      } catch (error) {
+        note = error.message === 'document_inbox_full'
+          ? `收到文件“${name}”，但当前用户的私有文件区已达到 64 MiB 上限，请联系管理员清理旧附件。`
+          : `收到文件“${name}”，但下载或解密失败，请如实告知用户重新发送。`;
+      }
+    }
+    const prompt = [text.slice(0, 7000), `[程序附加的微信文件信息]\n${note}`].filter(Boolean).join('\n\n');
+    let accepted;
+    try { accepted = this.store.acceptWechat(binding, { id: messageId, text: prompt, contextToken }); }
+    catch (error) { if (savedPath) await unlink(savedPath).catch(() => {}); throw error; }
+    if (!accepted && savedPath) await unlink(savedPath).catch(() => {});
     if (accepted) this.onMessage();
     return accepted;
   }
@@ -199,7 +290,7 @@ export class WechatManager {
         const response = await this.client.updates(latest, signal);
         if (signal.aborted || !this.current(binding)) return;
         let acceptedAll = true;
-        for (const message of response.msgs || []) if (!this.ingest(binding, message)) acceptedAll = false;
+        for (const message of response.msgs || []) if (!await this.ingest(binding, message)) acceptedAll = false;
         if (acceptedAll && response.get_updates_buf) this.store.bindingCursor(binding.id, response.get_updates_buf);
         await this.flush();
       } catch (error) {

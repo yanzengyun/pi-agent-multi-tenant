@@ -301,10 +301,16 @@ export class Store {
   }
   bindingStatus(id, status) { this.db.prepare('UPDATE wechat_bindings SET status=? WHERE id=?').run(status, id); }
   bindingCursor(id, cursor) { this.db.prepare('UPDATE wechat_bindings SET cursor=? WHERE id=?').run(cursor, id); }
-  acceptWechat(binding, message) {
-    if (this.db.prepare('SELECT id FROM wechat_inbox WHERE bot_id=? AND message_id=?').get(binding.bot_id, message.id)) return true;
+  hasWechatMessage(botId, messageId) {
+    return Boolean(this.db.prepare('SELECT 1 FROM wechat_inbox WHERE bot_id=? AND message_id=?').get(botId, messageId));
+  }
+  canAcceptWechat(userId) {
     const queued = this.pending();
-    if (queued.length >= 20 || queued.filter(r => r.user_id === binding.user_id).length >= 5) return false;
+    return queued.length < 20 && queued.filter(run => run.user_id === userId).length < 5;
+  }
+  acceptWechat(binding, message) {
+    if (this.hasWechatMessage(binding.bot_id, message.id)) return true;
+    if (!this.canAcceptWechat(binding.user_id)) return false;
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const run = this.createRun(binding.user_id, binding.conversation_id, message.text);

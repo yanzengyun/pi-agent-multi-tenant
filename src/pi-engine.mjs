@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { withTimeContext } from './time-context.mjs';
 import { isQuotaFailure } from './model-errors.mjs';
 import { memorySnapshot } from './memory.mjs';
+import { documentReader } from './document-reader.mjs';
 
 export class PiEngine {
   mode = 'pi';
@@ -16,6 +17,7 @@ export class PiEngine {
     this.sdk = await import(specifier.startsWith('/') ? pathToFileURL(specifier).href : specifier);
     const require = createRequire(specifier.startsWith('/') ? specifier : import.meta.url);
     this.Type = (await import(pathToFileURL(require.resolve('typebox')).href)).Type;
+    this.documentConverter = (await import('@firecrawl/anydoc')).toMarkdown;
   }
   async run(ctx, prompt) {
     const { createAgentSession, createExtensionRuntime, ModelRuntime, SessionManager, SettingsManager } = this.sdk;
@@ -58,6 +60,15 @@ export class PiEngine {
         parameters: Type.Object({ content: Type.String({ maxLength: 8000 }) }),
         async execute(_id, { content }) { ctx.writeAgentProfile(content); return result('人物设定已保存，后续对话生效。'); } },
     );
+    if (this.documentConverter) {
+      const documents = documentReader(workspace, this.documentConverter);
+      customTools.push({
+        name: 'read_doc', label: 'Read My Document',
+        description: '读取当前用户自己工作目录中的 Word、Excel、PowerPoint、PDF、OpenDocument、RTF、EPUB 或 CSV。微信收到的文件会给出私有路径；只能读取该路径或本人工作目录中的文件，最大8MiB。OCR关闭，扫描版PDF不能识别，文件不会上传第三方。',
+        parameters: Type.Object({ path: Type.String({ maxLength: 1000 }) }),
+        async execute(_id, { path }) { return result(JSON.stringify(await documents.read(path, ctx.signal))); },
+      });
+    }
     if (ctx.speech) customTools.push({
       name: 'voice_reply', label: 'Prepare Voice Reply',
       description: '用户明确要求语音回复或自己的人物设定要求时，准备一个MP3音频附件（原生语音气泡暂不可用）。每轮最多一次，中文口语内容最多200字符、60秒；长回答只读摘要。完成后系统会发送文字和MP3音频文件，工具成功仅表示准备好，不代表已送达。失败时正常文字回复，不能声称已发语音气泡或已送达。',

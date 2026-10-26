@@ -20,6 +20,8 @@
     }
   },
   "dependencies": {
+    "@everyx/pi-read-doc": "1.1.1",
+    "@firecrawl/anydoc": "0.2.4",
     "qrcode": "1.5.4"
   },
   "license": "MIT"

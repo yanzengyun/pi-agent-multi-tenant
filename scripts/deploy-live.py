@@ -77,7 +77,7 @@ env.write_text('ASSISTANT_DATA_DIR='+str(data/'data')+'\nASSISTANT_ENGINE=pi\nAS
 launcher=private/'start.sh'
 launcher.write_text('#!/bin/sh\nset -eu\numask 077\nset -a\n. "$HOME/.config/pi-agent/env"\n. "$HOME/.config/pi-agent-multi-tenant/env"\nset +a\ncd "$HOME/pi-agent-multi-tenant-live"\nASSISTANT_ADMIN_PASSWORD=$(/usr/bin/python3 -c \'import json;print(json.load(open("/home/admin/.config/pi-agent-multi-tenant/login.json"))["password"])\')\nexport ASSISTANT_ADMIN_PASSWORD\nexec /usr/local/bin/node src/main.mjs\n');launcher.chmod(0o700)
 subprocess.run(['chown','-R','admin:admin',str(private),str(data)],check=True)
-for directory,args in [(str(base),['--omit=peer']),(str(base/'sdk-runtime'),[])]:
+for directory,args in [(str(base),['--legacy-peer-deps']),(str(base/'sdk-runtime'),[])]:
  subprocess.run(['runuser','-u','admin','--','npm','ci','--prefix',directory,*args,'--ignore-scripts','--no-audit','--no-fund'],check=True)
 unit=Path('/etc/systemd/system/pi-multi-tenant.service')
 unit.write_text('[Unit]\nDescription=Multi-user Pi assistant\nAfter=network-online.target docker.service\nWants=network-online.target\n\n[Service]\nUser=admin\nGroup=admin\nEnvironment=HOME=/home/admin\nWorkingDirectory='+str(base)+'\nExecStart='+str(launcher)+'\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=180\nMemoryHigh=256M\nMemoryMax=384M\nCPUQuota=50%\nUMask=0077\n\n[Install]\nWantedBy=multi-user.target\n');unit.chmod(0o644)

@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Store } from '../src/store.mjs';
+import { createCipheriv } from 'node:crypto';
 import { ILinkClient, WechatManager, wechatBase } from '../src/wechat.mjs';
 import { RunQueue } from '../src/queue.mjs';
 import { MockEngine } from '../src/engine.mjs';
@@ -288,4 +289,48 @@ test('unbinding clears prepared audio and prevents its delivery', async t => {
   store.saveVoice(alice.id, run.id, { audio: Buffer.from('fake-silk'), duration: 1000, sampleRate: 24000 });
   store.runStatus(run.id, 'completed', 'done'); manager.disconnect(alice.id); await manager.flush();
   assert.equal(store.voice(alice.id, run.id), undefined); assert.equal(client.sent.length, 0);
+});
+
+test('document attachments are downloaded once into only the authenticated tenant workspace', async t => {
+  const { store, alice, bob, manager, client } = fixture(t);
+  const binding = store.bindWechat(alice.id, { token: 'fake-token', botId: 'doc-bot', remoteUser: 'doc-peer', baseUrl: 'https://ilinkai.weixin.qq.com' });
+  let downloads = 0;
+  client.downloadDocument = async file => { downloads++; assert.equal(file.file_name, '../report.csv'); return Buffer.from('name,value\nalice,42\n'); };
+  const raw = { message_type: 1, message_id: 'doc-message', from_user_id: binding.remote_user,
+    context_token: 'doc-context', item_list: [{ type: 4, file_item: { file_name: '../report.csv', len: '20',
+      media: { encrypt_query_param: 'private-ref', aes_key: 'private-key' } } }] };
+  assert.equal(await manager.ingest(binding, raw), true);
+  assert.equal(await manager.ingest(binding, raw), true); assert.equal(downloads, 1);
+  const run = store.pending()[0];
+  assert.match(run.prompt, /程序附加的微信文件信息/);
+  const path = run.prompt.match(/私有目录：([^\n]+)/)[1];
+  assert.ok(path.startsWith(join(store.directory, 'tenants', alice.id, 'workspace', 'inbox') + '/'));
+  assert.ok(!path.includes('/../')); assert.equal(readFileSync(path, 'utf8'), 'name,value\nalice,42\n');
+  assert.ok(!path.includes(bob.id)); assert.doesNotMatch(run.prompt, /private-ref|private-key/);
+});
+
+test('document attachment failures become bounded user-visible input and never store media secrets', async t => {
+  const { store, alice, manager, client } = fixture(t);
+  const binding = store.bindWechat(alice.id, { token: 'fake-token', botId: 'bad-doc-bot', remoteUser: 'bad-doc-peer', baseUrl: 'https://ilinkai.weixin.qq.com' });
+  client.downloadDocument = async () => { throw new Error('private-download-error'); };
+  await manager.ingest(binding, { message_type: 1, message_id: 'bad-doc', from_user_id: binding.remote_user,
+    context_token: 'bad-doc-context', item_list: [{ type: 4, file_item: { file_name: 'broken.pdf',
+      media: { encrypt_query_param: 'private-ref', aes_key: 'private-key' } } }] });
+  const prompt = store.pending()[0].prompt;
+  assert.match(prompt, /下载或解密失败/); assert.doesNotMatch(prompt, /private-download-error|private-ref|private-key/);
+});
+
+test('iLink document transport decrypts bounded CDN payloads and rejects declared oversize files', async () => {
+  const plain = Buffer.from('name,value\nalice,42\n'), key = Buffer.from('00112233445566778899aabbccddeeff', 'hex');
+  const cipher = createCipheriv('aes-128-ecb', key, null), encrypted = Buffer.concat([cipher.update(plain), cipher.final()]);
+  const media = { encrypt_query_param: 'safe-test-reference', aes_key: Buffer.from(key.toString('hex')).toString('base64') };
+  const client = new ILinkClient({ fetcher: async url => {
+    assert.match(String(url), /^https:\/\/novac2c\.cdn\.weixin\.qq\.com\/c2c\/download\?/);
+    return new Response(encrypted, { status: 200, headers: { 'content-length': String(encrypted.length) } });
+  } });
+  assert.deepEqual(await client.downloadDocument({ media }), plain);
+  const oversized = new ILinkClient({ fetcher: async () => new Response(encrypted, {
+    status: 200, headers: { 'content-length': String(9 * 1024 * 1024) },
+  }) });
+  await assert.rejects(oversized.downloadDocument({ media }), /document_too_large/);
 });

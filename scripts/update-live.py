@@ -62,7 +62,7 @@ with tarfile.open(backup/'code.tar.gz') as tar:
  except KeyError: previous=None
 base=Path('/home/admin/pi-agent-multi-tenant-live')
 if previous != (base/'package-lock.json').read_bytes():
- subprocess.run(['runuser','-u','admin','--','npm','ci','--omit=peer','--ignore-scripts','--no-audit','--no-fund'],cwd=base,check=True)
+ subprocess.run(['runuser','-u','admin','--','npm','ci','--legacy-peer-deps','--ignore-scripts','--no-audit','--no-fund'],cwd=base,check=True)
 print('locked_dependencies_ready')
 '''
     subprocess.run(ssh+['python3 -'],input=dependencies,text=True,check=True)
@@ -97,7 +97,7 @@ import subprocess,tarfile
 backup=Path(Path('/tmp/pi-multi-tenant-last-backup.txt').read_text())
 subprocess.run(['systemctl','stop','pi-multi-tenant'],check=True)
 with tarfile.open(backup/'code.tar.gz') as tar:tar.extractall('/home/admin/pi-agent-multi-tenant-live')
-subprocess.run(['runuser','-u','admin','--','npm','ci','--omit=peer','--ignore-scripts','--no-audit','--no-fund'],cwd='/home/admin/pi-agent-multi-tenant-live',check=True)
+subprocess.run(['runuser','-u','admin','--','npm','ci','--legacy-peer-deps','--ignore-scripts','--no-audit','--no-fund'],cwd='/home/admin/pi-agent-multi-tenant-live',check=True)
 Path('/etc/nginx/pi-app-routes.d/pi-multi-tenant.conf').write_text((backup/'nginx.conf').read_text())
 subprocess.run(['systemctl','start','pi-multi-tenant'],check=True)
 subprocess.run(['nginx','-t'],check=True,capture_output=True);subprocess.run(['systemctl','reload','nginx'],check=True)

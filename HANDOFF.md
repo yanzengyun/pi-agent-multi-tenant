@@ -1,3 +1,12 @@
+## 多租户微信文档读取上线（2026-10-26 18:15）
+
+- 用户要求把主助手刚安装的文档读取能力加入多助手。多租户不是Pi CLI包自动发现，而是Pi SDK显式工具白名单；因此根目录锁定安装`@everyx/pi-read-doc@1.1.1`及`@firecrawl/anydoc@0.2.4`，通过自有`read_doc`包装调用本地转换引擎，没有加载第三方插件的任意宿主路径或默认云OCR行为。
+- `read_doc`仅允许当前租户`data/tenants/<uuid>/workspace`内的真实普通文件；realpath阻止`..`和越界符号链接。支持Office/CSV/EPUB/RTF/OpenDocument/文本PDF，单文件8MiB、返回50KiB/2000行上限。扫描PDF返回`document_needs_ocr`；未接RapidOCR或Firecrawl，不上传文档。
+- 微信type4文件现在由固定微信CDN下载、8MiB流式限额、AES-128-ECB解密，安全文件名后以0600保存到本人`workspace/inbox`，每用户该附件区限64MiB；模型只收到本人路径，不收到CDN参数/AES key/下载错误。先校验绑定身份和队列容量再下载，同message_id重放不重复下载；入队竞态失败清理刚保存文件，不支持/超限/失败会形成有界说明供助手如实回复。
+- `read_doc`只在正常用户回合启用，人物草稿没有；不新增宿主机`read/bash`权限。文件正文按不可信资料处理，不能授予权限。删除用户时既有租户目录清理会一并清理其附件；其他用户无法读取。
+- 插件peer范围仍写Pi`^0.84.0`，与当前1.1.0声明冲突；主助手已真实验证兼容，多租户只复用转换器。根依赖使用锁文件+`npm ci --legacy-peer-deps --ignore-scripts`，不会安装第二套Pi宿主；部署/回滚/开发脚本和文档已同步。
+- 本地116项Node和6项沙箱测试通过；全新锁文件重装通过。最终生产空队列部署备份`/home/admin/.local/share/pi-agent-multi-tenant/backups/20261026-181512`；服务器最终文档/微信聚焦21项通过（此前工具聚焦34项也通过），health ok/mode pi，3用户/3 connected、0 queued/running，主Pi PID682680不变。未向真实微信发送合成消息，真实手机发文档端到端显示仍待用户自行测试。
+
 ## Bob 新消息后投递核验（2026-10-25 21:01）
 
 - bob 21:01:05新消息已入库，模型run completed/error null；processing回执21:01:05与reply21:01:10均记录wechat_api_accepted/upstreamMessageIdPresent=true，outbox sent。该新回合未见投递失败，不将API接受等同客户端实际送达。
